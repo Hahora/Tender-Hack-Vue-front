@@ -307,52 +307,87 @@ function onBlur(e) {
 .region-banner-enter-from { max-height: 0; opacity: 0; }
 .region-banner-leave-to   { max-height: 0; opacity: 0; }
 
-/* === Мобильная адаптация === */
+/* === Мобильная адаптация: модальное окно === */
 @media (max-width: 700px) {
+  /* Оверлей на весь экран */
+  .rb {
+    position: fixed;
+    inset: 0;
+    top: 0 !important;
+    background: rgba(0, 0, 0, 0.45);
+    border-bottom: none;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+    z-index: 600;
+  }
+
+  /* Карточка по центру */
   .rb__inner {
     flex-direction: column;
     align-items: stretch;
-    gap: 6px;
-    padding: 10px 0;
+    gap: var(--space-4);
+    padding: var(--space-6) var(--space-5) var(--space-5);
     min-height: auto;
+    background: #fff;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.22);
+    width: 100%;
+    max-width: 360px;
+    position: relative;
   }
 
-  /* Строка 1: иконка + текст + закрыть */
-  .rb__pin { display: none; }
+  .rb__pin {
+    display: block;
+    margin: 0 auto;
+  }
 
   .rb__text {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-base);
     white-space: normal;
-    flex: 1;
+    text-align: center;
   }
 
-  .rb__close { margin-left: 0; }
+  /* Крестик — в правом верхнем углу карточки */
+  .rb__close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    margin-left: 0;
+  }
 
-  /* Строка 2: кнопки действий */
+  /* Действия — колонкой */
   .rb__actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
     margin-left: 0;
     width: 100%;
   }
 
-  .rb__sep,
-  .rb__or { display: none; }
+  .rb__sep { display: none; }
+
+  .rb__or {
+    text-align: center;
+    font-size: var(--font-size-xs);
+  }
 
   .rb__btn--confirm {
-    flex: 1;
-    padding: 7px 12px;
-    font-size: var(--font-size-xs);
+    width: 100%;
+    padding: 11px 12px;
+    font-size: var(--font-size-base);
     text-align: center;
   }
 
-  .rb__drop-wrap { flex: 1; }
+  .rb__drop-wrap { width: 100%; }
 
   .rb__drop-trigger {
     width: 100%;
     justify-content: space-between;
-    padding: 7px 10px;
+    padding: 9px 12px;
+    font-size: var(--font-size-base);
   }
 
   .rb__drop {
