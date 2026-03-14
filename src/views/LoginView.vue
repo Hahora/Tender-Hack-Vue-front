@@ -11,7 +11,7 @@ const pwdVal   = ref('')
 const showPwd  = ref(false)
 const error    = ref('')
 
-async async function submit() {
+async function submit() {
   error.value = ''
   try {
     await auth.login(loginVal.value, pwdVal.value)
