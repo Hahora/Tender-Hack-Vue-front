@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { usePriceStore } from "../stores/priceStore.js";
 import { usePriceCalculation } from "../composables/usePriceCalculation.js";
@@ -11,7 +11,7 @@ const router = useRouter();
 const route  = useRoute();
 const store  = usePriceStore();
 
-// Восстанавливаем поиск из URL (?q=...) при обновлении страницы
+// Восстанавливаем поиск и фильтры из URL при обновлении страницы
 onMounted(async () => {
   const q = route.query.q;
   if (q) {
@@ -20,12 +20,35 @@ onMounted(async () => {
     }
   } else if (!store.hasSearched) {
     router.replace("/");
+    return;
   }
-  // Подставляем регион пользователя в фильтр (если ещё не выбран)
-  if (!store.filters.region && store.userRegion) {
-    store.filters = { ...store.filters, region: store.userRegion };
-  }
+
+  // Применяем фильтры из URL (или регион пользователя как дефолт)
+  store.filters = {
+    region:   String(route.query.region   || store.userRegion || ""),
+    vatRate:  String(route.query.vatRate  || ""),
+    dateFrom: String(route.query.dateFrom || ""),
+    dateTo:   String(route.query.dateTo   || ""),
+    outliers: "all",
+  };
 });
+
+// Синхронизируем фильтры в URL при их изменении
+watch(
+  () => store.filters,
+  (f) => {
+    router.replace({
+      query: {
+        q:        store.steQuery || undefined,
+        region:   f.region   || undefined,
+        vatRate:  f.vatRate  || undefined,
+        dateFrom: f.dateFrom || undefined,
+        dateTo:   f.dateTo   || undefined,
+      },
+    });
+  },
+  { deep: true }
+);
 
 const {
   processedProcurements,
@@ -85,7 +108,28 @@ async function recalculate() {
   await store.search(store.steQuery);
 }
 
-const displayList = computed(() => processedProcurements.value);
+/* ─── Пагинация ─── */
+const PAGE_SIZE_OPTIONS = [12, 24, 48]
+const pageSize    = ref(12)
+const currentPage = ref(1)
+
+// Сбрасываем на первую страницу при новом поиске или смене размера
+watch(() => store.steQuery, () => { currentPage.value = 1 })
+watch(pageSize, () => { currentPage.value = 1 })
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(processedProcurements.value.length / pageSize.value))
+)
+
+const displayList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return processedProcurements.value.slice(start, start + pageSize.value)
+})
+
+function goToPage(p) {
+  currentPage.value = Math.min(Math.max(1, p), totalPages.value)
+  window.scrollTo({ top: 0, behavior: "smooth" })
+}
 </script>
 
 <template>
@@ -176,9 +220,56 @@ const displayList = computed(() => processedProcurements.value);
               v-for="(p, i) in displayList"
               :key="p.id"
               :procurement="p"
-              :index="i"
-              @toggle-exclude="store.toggleExclude($event)"
+              :index="(currentPage - 1) * pageSize + i"
             />
+
+            <!-- Пагинация -->
+            <div class="pg">
+              <!-- Выбор кол-ва на странице -->
+              <div class="pg__size">
+                <span class="pg__size-label">По</span>
+                <button
+                  v-for="n in PAGE_SIZE_OPTIONS"
+                  :key="n"
+                  class="pg__size-btn"
+                  :class="{ 'pg__size-btn--active': pageSize === n }"
+                  @click="pageSize = n"
+                >{{ n }}</button>
+              </div>
+
+              <span class="pg__info">
+                {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, processedProcurements.length) }}
+                из {{ processedProcurements.length }}
+              </span>
+
+              <!-- Кнопки страниц -->
+              <div class="pg__nav">
+                <button class="pg__btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">
+                  <svg width="7" height="12" viewBox="0 0 7 12" fill="none">
+                    <path d="M6 1L1 6l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+
+                <template v-for="p in totalPages" :key="p">
+                  <button
+                    v-if="p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1"
+                    class="pg__page"
+                    :class="{ 'pg__page--active': p === currentPage }"
+                    @click="goToPage(p)"
+                  >{{ p }}</button>
+                  <span
+                    v-else-if="p === currentPage - 2 || p === currentPage + 2"
+                    class="pg__dots"
+                  >…</span>
+                </template>
+
+                <button class="pg__btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">
+                  <svg width="7" height="12" viewBox="0 0 7 12" fill="none">
+                    <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -401,5 +492,122 @@ const displayList = computed(() => processedProcurements.value);
   .results__title-query {
     font-size: var(--font-size-xl);
   }
+}
+
+/* ─── Пагинация ─── */
+.pg {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4) 0 var(--space-2);
+  border-top: 1px solid var(--color-gray-blue);
+  margin-top: var(--space-2);
+}
+
+.pg__size {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pg__size-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  margin-right: 2px;
+}
+
+.pg__size-btn {
+  height: 28px;
+  min-width: 36px;
+  padding: 0 8px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.pg__size-btn:hover { background: var(--color-pale-blue); border-color: var(--color-main-blue); }
+
+.pg__size-btn--active {
+  background: var(--color-main-blue);
+  border-color: var(--color-main-blue);
+  color: #fff;
+}
+
+.pg__info {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  margin-left: auto;
+}
+
+.pg__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pg__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  color: var(--color-main-blue);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pg__btn:hover:not(:disabled) {
+  background: var(--color-pale-blue);
+  border-color: var(--color-main-blue);
+}
+
+.pg__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pg__page {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.pg__page:hover { background: var(--color-pale-blue); border-color: var(--color-main-blue); }
+
+.pg__page--active {
+  background: var(--color-main-blue);
+  border-color: var(--color-main-blue);
+  color: #fff;
+}
+
+.pg__dots {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  padding: 0 2px;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .pg { gap: var(--space-2); }
+  .pg__info { margin-left: 0; width: 100%; order: -1; }
 }
 </style>
