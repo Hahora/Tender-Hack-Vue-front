@@ -1,37 +1,40 @@
 /**
  * Pinia-хранилище: глобальное состояние сервиса расчёта НМЦ
- * Объединяет данные поиска, фильтров и расчётов в одном месте
  */
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { generateMockProcurements } from '../data/mockProcurements.js'
+import { ref } from 'vue'
 import { REGIONS } from '../data/mockProcurements.js'
+import { api } from '../api/api.js'
+import { useAuthStore } from './authStore.js'
 
 export const usePriceStore = defineStore('price', () => {
 
   /* ─── Состояние поиска ─── */
-  const steQuery    = ref('')      // название СТЕ
+  const steQuery    = ref('')
   const isLoading   = ref(false)
   const hasSearched = ref(false)
   const error       = ref(null)
 
   /* ─── Геолокация ─── */
-  const userRegion        = ref('Москва')   // активный регион (fallback если геолокация недоступна)
-  const detectedRegion    = ref('')         // что нашла геолокация (до подтверждения)
-  const regionDetecting   = ref(false)
-  const regionDetected    = ref(false)
-  const regionConfirmed   = ref(false)      // пользователь подтвердил/отклонил
+  const userRegion      = ref('Москва')
+  const detectedRegion  = ref('')
+  const regionDetecting = ref(false)
+  const regionDetected  = ref(false)
+  const regionConfirmed = ref(false)
 
-  /* ─── Данные закупок ─── */
+  /* ─── Данные закупок (STЕ из API) ─── */
   const procurements = ref([])
+
+  /* ─── Сырые данные НМЦК с бэка (null если данных нет) ─── */
+  const nmckData = ref(null)
 
   /* ─── Фильтры ─── */
   const filters = ref({
     region:   '',
     dateFrom: '',
     dateTo:   '',
-    vatRate:  '',       // '' = все, '20'/'10'/'0'/'-1' (без НДС)
-    outliers: 'all',   // 'all' | 'hide' | 'only'
+    vatRate:  '',
+    outliers: 'all',
   })
 
   /* ─── Параметры расчёта ─── */
@@ -44,22 +47,66 @@ export const usePriceStore = defineStore('price', () => {
   /* ─── Регионы для фильтра ─── */
   const availableRegions = REGIONS
 
-  /* ─── Выполнить поиск ─── */
+  /**
+   * Выполнить поиск через бэк.
+   * При 401 автоматически обновляет токен и повторяет запрос.
+   */
   async function search(query) {
+    const auth    = useAuthStore()
     const trimmed = query?.trim()
     if (!trimmed) return
+
     steQuery.value    = trimmed
     isLoading.value   = true
     error.value       = null
     hasSearched.value = true
+
     try {
-      // Имитация сетевого запроса; при подключении бэка заменить на fetch/axios
-      await new Promise(r => setTimeout(r, 900 + Math.random() * 500))
-      procurements.value = generateMockProcurements(trimmed, 30)
-        .map(p => ({ ...p, isExcluded: false, manualPrice: false }))
-    } catch {
-      error.value = 'Не удалось загрузить данные. Попробуйте ещё раз.'
+      const params = {
+        query:  trimmed,
+        region: userRegion.value || null,
+      }
+
+      let data
+      try {
+        data = await api.search(params, auth.accessToken)
+      } catch (err) {
+        if (err.status === 401) {
+          // Токен истёк — обновляем и повторяем
+          const newToken = await auth.refresh()
+          data = await api.search(params, newToken)
+        } else {
+          throw err
+        }
+      }
+
+      nmckData.value = data.nmck || null
+
+      procurements.value = (data.ste || []).map(item => ({
+        id:          item.ste_id,
+        steNumber:   item.ste_id,
+        name:        item.name,
+        category:    item.category || '',
+        score:       item.score    ?? 0,
+        unitPrice:   item.last_price ?? 0,
+        unit:        requestedUnit.value,
+        supplier:    '—',
+        region:      userRegion.value,
+        date:        new Date().toISOString().split('T')[0],
+        law:         '44-ФЗ',
+        isOutlier:   false,
+        isExcluded:  false,
+        manualPrice: false,
+      }))
+
+    } catch (err) {
+      if (err.status === 401 || err.message === 'no_refresh_token') {
+        error.value = 'Сессия истекла. Войдите снова.'
+      } else {
+        error.value = 'Не удалось загрузить данные. Попробуйте ещё раз.'
+      }
       procurements.value = []
+      nmckData.value     = null
     } finally {
       isLoading.value = false
     }
@@ -102,7 +149,7 @@ export const usePriceStore = defineStore('price', () => {
     })
   }
 
-  /* ─── Включить выброс в расчёт вручную (переопределяет IQR) ─── */
+  /* ─── Включить выброс в расчёт вручную ─── */
   function toggleManualInclude(id) {
     const p = procurements.value.find(p => p.id === id)
     if (p) p.manualInclude = !p.manualInclude
@@ -126,11 +173,11 @@ export const usePriceStore = defineStore('price', () => {
       const raw  = data.address?.state || data.address?.city || data.address?.county || ''
       if (raw) {
         detectedRegion.value = raw
-        userRegion.value     = raw   // сразу применяем — пользователь может откорректировать в баннере
+        userRegion.value     = raw
       }
       regionDetected.value = true
     } catch {
-      // Геолокация отклонена или недоступна — оставляем Московская область
+      // Геолокация отклонена или недоступна — оставляем Москва
     } finally {
       regionDetecting.value = false
     }
@@ -151,7 +198,7 @@ export const usePriceStore = defineStore('price', () => {
   return {
     steQuery, isLoading, hasSearched, error,
     userRegion, detectedRegion, regionDetecting, regionDetected, regionConfirmed, detectRegion,
-    procurements,
+    procurements, nmckData,
     filters,
     requestedQty, requestedUnit,
     docVersion,

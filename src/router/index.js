@@ -86,7 +86,7 @@ const router = createRouter({
 
 // Защита маршрутов: не авторизован — на /login
 router.beforeEach((to) => {
-  const isAuth = localStorage.getItem('isAuth') === 'true'
+  const isAuth = !!localStorage.getItem('access_token')
   if (!isAuth && to.name !== 'login') {
     return { name: 'login' }
   }

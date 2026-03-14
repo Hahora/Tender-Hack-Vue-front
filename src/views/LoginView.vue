@@ -11,13 +11,17 @@ const pwdVal   = ref('')
 const showPwd  = ref(false)
 const error    = ref('')
 
-function submit() {
+async async function submit() {
   error.value = ''
-  if (loginVal.value === 'admin' && pwdVal.value === 'admin') {
-    auth.login(loginVal.value)
+  try {
+    await auth.login(loginVal.value, pwdVal.value)
     router.push({ name: 'home' })
-  } else {
-    error.value = 'Неверный логин или пароль'
+  } catch (err) {
+    if (err.status === 401) {
+      error.value = 'Неверный логин или пароль'
+    } else {
+      error.value = 'Ошибка сервера. Попробуйте позже.'
+    }
   }
 }
 </script>

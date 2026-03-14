@@ -13,6 +13,10 @@ dist-ssr
 *.local
 .playwright-mcp
 
+# Env — конфиг с секретами не коммитим
+.env
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

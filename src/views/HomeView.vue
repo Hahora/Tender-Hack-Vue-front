@@ -8,7 +8,7 @@ const store = usePriceStore();
 
 async function handleSearch(query) {
   await store.search(query);
-  router.push({ name: "results" });
+  router.push({ name: 'results', query: { q: query } });
 }
 
 const QUICK_EXAMPLES = [

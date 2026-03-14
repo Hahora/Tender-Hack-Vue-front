@@ -1,6 +1,6 @@
 <script setup>
-import { computed } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { usePriceStore } from "../stores/priceStore.js";
 import { usePriceCalculation } from "../composables/usePriceCalculation.js";
 import CalculationSummary from "../components/results/CalculationSummary.vue";
@@ -8,15 +8,23 @@ import PriceFilter from "../components/results/PriceFilter.vue";
 import PriceResultCard from "../components/results/PriceResultCard.vue";
 
 const router = useRouter();
-const store = usePriceStore();
+const route  = useRoute();
+const store  = usePriceStore();
 
-if (!store.hasSearched) {
-  router.replace("/");
-}
+// Восстанавливаем поиск из URL (?q=...) при обновлении страницы
+onMounted(async () => {
+  const q = route.query.q;
+  if (q) {
+    if (!store.hasSearched || store.steQuery !== q) {
+      await store.search(q);
+    }
+  } else if (!store.hasSearched) {
+    router.replace("/");
+  }
+});
 
 const {
   processedProcurements,
-  validProcurements,
   weightedAvgUnitPrice,
   totalNmts,
   statistics,
@@ -26,6 +34,30 @@ const {
   computed(() => store.filters),
   computed(() => store.requestedQty)
 );
+
+// Если бэк вернул данные НМЦК — используем их, иначе клиентский расчёт
+const displayUnitPrice = computed(() =>
+  store.nmckData ? store.nmckData.nmck : weightedAvgUnitPrice.value
+);
+
+const displayTotalNmts = computed(() =>
+  displayUnitPrice.value * store.requestedQty
+);
+
+const displayStatistics = computed(() => {
+  if (store.nmckData) {
+    const d = store.nmckData;
+    return {
+      count:        d.n_contracts,
+      outlierCount: d.n_outliers,
+      excludedCount: 0,
+      minPrice:     d.price_min,
+      maxPrice:     d.price_max,
+      medianPrice:  d.nmck,
+    };
+  }
+  return statistics.value;
+});
 
 const activeFiltersCount = computed(
   () => Object.values(store.filters).filter(Boolean).length
@@ -149,9 +181,9 @@ const displayList = computed(() => processedProcurements.value);
         <!-- Правая колонка — расчёт НМЦ -->
         <aside class="results__sidebar">
           <CalculationSummary
-            :unit-price="weightedAvgUnitPrice"
-            :total-nmts="totalNmts"
-            :statistics="statistics"
+            :unit-price="displayUnitPrice"
+            :total-nmts="displayTotalNmts"
+            :statistics="displayStatistics"
             :requested-qty="store.requestedQty"
             :unit="store.requestedUnit"
             :justification-text="justificationText"
