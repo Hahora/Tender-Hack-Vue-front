@@ -23,7 +23,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (accessToken.value && refreshToken.value) {
         await api.logout(accessToken.value, refreshToken.value)
       }
-    } catch { /* игнорируем сетевые ошибки при выходе */ }
+    } catch (_e) { /* игнорируем сетевые ошибки при выходе */ }
     _clearTokens()
   }
 

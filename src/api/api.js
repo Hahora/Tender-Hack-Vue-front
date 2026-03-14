@@ -1,8 +1,9 @@
 /**
  * HTTP-клиент для работы с бэкендом.
- * BASE_URL берётся из переменной окружения VITE_API_BASE_URL (.env).
+ * В dev-режиме используем пустую строку — запросы идут через Vite proxy.
+ * В prod — полный URL из VITE_API_BASE_URL.
  */
-const BASE_URL = import.meta.env.VITE_API_BASE_URL
+const BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || '')
 
 async function request(method, path, { body, token } = {}) {
   const headers = { 'Content-Type': 'application/json' }

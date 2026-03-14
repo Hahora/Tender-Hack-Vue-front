@@ -176,7 +176,7 @@ export const usePriceStore = defineStore('price', () => {
         userRegion.value     = raw
       }
       regionDetected.value = true
-    } catch {
+    } catch (_e) {
       // Геолокация отклонена или недоступна — оставляем Москва
     } finally {
       regionDetecting.value = false
