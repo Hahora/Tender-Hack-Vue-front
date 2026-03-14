@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { usePriceStore } from "../stores/priceStore.js";
 import { formatPrice, formatDate } from "../composables/usePriceCalculation.js";
@@ -8,9 +8,18 @@ const router = useRouter();
 const route  = useRoute();
 const store  = usePriceStore();
 
-if (!store.hasSearched) {
-  router.replace("/");
-}
+// При перезагрузке стор пустой — восстанавливаем поиск из URL-параметров
+onMounted(async () => {
+  if (!store.hasSearched && route.query.q) {
+    store.filters.region   = route.query.region   || ''
+    store.filters.dateFrom = route.query.date_from || ''
+    store.filters.dateTo   = route.query.date_to   || ''
+    store.filters.vatRate  = route.query.vat        || ''
+    await store.search(route.query.q)
+  } else if (!store.hasSearched) {
+    router.replace('/')
+  }
+})
 
 // СТЕ из URL-параметра
 const steParam = route.params.ste;
@@ -38,7 +47,7 @@ const contracts = computed(() => {
         steNumber: p.steNumber,
         supplier: p.supplier,
         customer: p.customer,
-        region: p.region,
+        region: p.supplierRegion || p.region,
         date: p.date,
         vatRate: p.vatRate,
         items: [],
@@ -78,14 +87,23 @@ function contractTotal(items) {
   return items.reduce((sum, p) => sum + p.totalPrice, 0);
 }
 
+const confirmTarget = ref(null)
+
 function toggleContractInclude(c) {
-  const allIncluded = c.items.every(p => !p.isOutlier || p.manualInclude);
+  confirmTarget.value = c
+}
+
+function doConfirm() {
+  const c = confirmTarget.value
+  if (!c) return
+  confirmTarget.value = null
+  const allIncluded = c.items.every(p => !p.isOutlier || p.manualInclude)
   for (const p of c.items) {
     if (p.isOutlier) {
       if (allIncluded) {
-        if (p.manualInclude) store.toggleManualInclude(p.id);
+        if (p.manualInclude) store.toggleManualInclude(p.id)
       } else {
-        if (!p.manualInclude) store.toggleManualInclude(p.id);
+        if (!p.manualInclude) store.toggleManualInclude(p.id)
       }
     }
   }
@@ -116,6 +134,20 @@ function toggleContractInclude(c) {
           </template>
         </p>
         <h1 class="cl__title">{{ store.steQuery }}</h1>
+        <div class="cl__applied-filters">
+          <span v-if="store.filters.region || route.query.region" class="cl__af-tag">
+            <span class="cl__af-key">Регион:</span> {{ store.filters.region || route.query.region }}
+          </span>
+          <span v-if="store.filters.vatRate || route.query.vat" class="cl__af-tag">
+            <span class="cl__af-key">НДС:</span> {{ store.filters.vatRate || route.query.vat }}
+          </span>
+          <span v-if="store.filters.dateFrom || route.query.date_from" class="cl__af-tag">
+            <span class="cl__af-key">С:</span> {{ store.filters.dateFrom || route.query.date_from }}
+          </span>
+          <span v-if="store.filters.dateTo || route.query.date_to" class="cl__af-tag">
+            <span class="cl__af-key">По:</span> {{ store.filters.dateTo || route.query.date_to }}
+          </span>
+        </div>
       </div>
       <div class="cl__badge">{{ contracts.length }} контрактов</div>
     </div>
@@ -160,7 +192,7 @@ function toggleContractInclude(c) {
         :class="{
           'cl__card--outlier': contractStatus(c) !== 'active',
         }"
-        @click="router.push({ name: 'contract-detail', params: { number: c.contractNumber } })"
+        @click="router.push({ name: 'contract-detail', params: { number: c.contractNumber }, query: { steId: c.steNumber } })"
       >
         <!-- Акцентная полоса -->
         <div class="cl__card-accent" :class="{
@@ -265,6 +297,34 @@ function toggleContractInclude(c) {
 
       </div>
     </div>
+
+    <!-- Диалог подтверждения пересчёта -->
+    <Teleport to="body">
+      <Transition name="cl-modal">
+        <div v-if="confirmTarget" class="cl__overlay" @click.self="confirmTarget = null">
+          <div class="cl__dialog">
+            <div class="cl__dialog-icon">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <circle cx="11" cy="11" r="9" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M11 7v5M11 15v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="cl__dialog-body">
+              <p class="cl__dialog-title">Будет выполнен пересчёт НМЦК</p>
+              <p class="cl__dialog-sub">
+                {{ confirmTarget.items.some(p => p.isOutlier && p.manualInclude)
+                  ? 'Выброс будет исключён из расчёта. НМЦК пересчитается автоматически.'
+                  : 'Выброс будет включён в расчёт. НМЦК пересчитается автоматически.' }}
+              </p>
+            </div>
+            <div class="cl__dialog-actions">
+              <button class="cl__dialog-cancel" @click="confirmTarget = null">Отмена</button>
+              <button class="cl__dialog-confirm" @click="doConfirm">Пересчитать</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -305,6 +365,31 @@ function toggleContractInclude(c) {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: var(--space-1);
+}
+
+.cl__applied-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: 4px;
+}
+
+.cl__af-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.cl__af-key {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-main-blue);
 }
 
 .cl__title {
@@ -659,4 +744,73 @@ function toggleContractInclude(c) {
 .cl__include-btn:hover { background: #ffe5a0; border-color: #e6a800; }
 .cl__include-btn--active { color: #0d9b68; background: #e6f5ee; border-color: #0d9b68; }
 .cl__include-btn--active:hover { background: #cceedd; border-color: #0a7a52; }
+
+/* Диалог подтверждения */
+.cl__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.cl__dialog {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: var(--space-6);
+  max-width: 380px;
+  width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.cl__dialog-icon { color: var(--color-main-blue); display: flex; }
+.cl__dialog-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-black);
+  margin-bottom: 4px;
+}
+.cl__dialog-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
+  line-height: 1.5;
+}
+.cl__dialog-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+.cl__dialog-cancel {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.cl__dialog-cancel:hover { background: #dce8f5; }
+.cl__dialog-confirm {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+  background: var(--color-main-blue);
+  border: 1px solid var(--color-main-blue);
+  border-radius: var(--radius-base);
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+.cl__dialog-confirm:hover { opacity: 0.88; }
+
+.cl-modal-enter-active { transition: opacity 180ms ease; }
+.cl-modal-leave-active { transition: opacity 150ms ease; }
+.cl-modal-enter-from, .cl-modal-leave-to { opacity: 0; }
 </style>

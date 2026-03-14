@@ -3,8 +3,7 @@
  * Форма поиска СТЕ — главный элемент домашней страницы.
  * Содержит поле ввода, таблицу СТЕ (автодополнение) и кнопку поиска.
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { STE_CATALOG } from '../../data/mockProcurements.js'
+import { ref } from 'vue'
 import AppButton from '../ui/AppButton.vue'
 
 const props = defineProps({
@@ -13,57 +12,19 @@ const props = defineProps({
 
 const emit = defineEmits(['search'])
 
-const query            = ref('')
-const showSuggestions  = ref(false)
-const inputRef         = ref(null)
-
-// Фильтруем СТЕ по введённому тексту
-const suggestions = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q) return STE_CATALOG.slice(0, 8)
-  return STE_CATALOG.filter(s =>
-    s.name.toLowerCase().includes(q) ||
-    s.id.toLowerCase().includes(q) ||
-    s.category.toLowerCase().includes(q) ||
-    s.manufacturer.toLowerCase().includes(q)
-  ).slice(0, 8)
-})
-
-function onInput() {
-  showSuggestions.value = true
-}
-
-function onFocus() {
-  showSuggestions.value = true
-}
-
-function selectSuggestion(item) {
-  query.value = item.name
-  showSuggestions.value = false
-  doSearch()
-}
+const query    = ref('')
+const inputRef = ref(null)
 
 function doSearch() {
   const q = query.value.trim()
   if (!q) return
-  showSuggestions.value = false
   emit('search', q)
 }
-
-// Закрыть подсказки при клике вне поля
-function onDocClick(e) {
-  if (!e.target.closest('.search-form')) {
-    showSuggestions.value = false
-  }
-}
-
-onMounted(()    => document.addEventListener('click', onDocClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <template>
   <div class="search-form">
-    <div class="search-form__wrap" :class="{ 'search-form__wrap--open': showSuggestions && suggestions.length }">
+    <div class="search-form__wrap">
 
       <!-- Иконка поиска слева -->
       <span class="search-form__icon" aria-hidden="true">
@@ -79,13 +40,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         v-model="query"
         type="search"
         class="search-form__input"
-        placeholder="Введите наименование или идентификатор СТЕ"
+        placeholder="Введите наименование СТЕ"
         aria-label="Поиск СТЕ"
         autocomplete="off"
-        @input="onInput"
-        @focus="onFocus"
         @keydown.enter="doSearch"
-        @keydown.esc="showSuggestions = false"
       />
 
       <!-- Кнопка очистки -->
@@ -116,32 +74,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         </svg>
       </AppButton>
     </div>
-
-    <!-- Выпадающий список СТЕ в виде таблицы -->
-    <div v-if="showSuggestions && suggestions.length" class="search-form__suggestions" role="listbox">
-      <!-- Заголовок таблицы -->
-      <div class="search-form__table-head">
-        <span>Идентификатор</span>
-        <span>Наименование</span>
-        <span>Категория</span>
-        <span>Производитель</span>
-        <span>Характеристики СТЕ</span>
-      </div>
-      <!-- Строки -->
-      <button
-        v-for="item in suggestions"
-        :key="item.id"
-        class="search-form__table-row"
-        role="option"
-        @mousedown.prevent="selectSuggestion(item)"
-      >
-        <span class="search-form__cell search-form__cell--id">{{ item.id }}</span>
-        <span class="search-form__cell search-form__cell--name">{{ item.name }}</span>
-        <span class="search-form__cell search-form__cell--cat">{{ item.category }}</span>
-        <span class="search-form__cell search-form__cell--mfr">{{ item.manufacturer }}</span>
-        <span class="search-form__cell search-form__cell--chars">{{ item.characteristics }}</span>
-      </button>
-    </div>
   </div>
 </template>
 
@@ -149,7 +81,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .search-form {
   position: relative;
   width: 100%;
-  max-width: 900px;
 }
 
 /* --- Обёртка поля --- */
@@ -171,10 +102,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   box-shadow: 0 0 0 3px rgba(38, 75, 130, 0.1);
 }
 
-.search-form__wrap--open {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
 
 /* --- Иконка --- */
 .search-form__icon {
@@ -244,100 +171,4 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   }
 }
 
-/* --- Таблица СТЕ --- */
-.search-form__suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background-color: #fff;
-  border: 2px solid var(--color-main-blue);
-  border-top: none;
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: var(--radius-md);
-  overflow: hidden;
-  z-index: 50;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-
-/* Заголовок таблицы */
-.search-form__table-head {
-  display: grid;
-  grid-template-columns: 110px 1fr 150px 140px 200px;
-  gap: 0;
-  padding: 7px 16px;
-  background: var(--color-pale-blue);
-  border-bottom: 1px solid var(--color-gray-blue);
-}
-
-.search-form__table-head span {
-  font-size: 10px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-pale-black);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding-right: 8px;
-}
-
-/* Строки таблицы */
-.search-form__table-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 150px 140px 200px;
-  gap: 0;
-  width: 100%;
-  padding: 9px 16px;
-  font-family: var(--font-family);
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--color-gray-blue);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color var(--transition-fast);
-}
-
-.search-form__table-row:last-child {
-  border-bottom: none;
-}
-
-.search-form__table-row:hover {
-  background-color: var(--color-pale-blue);
-}
-
-.search-form__cell {
-  font-size: var(--font-size-sm);
-  color: var(--color-black);
-  padding-right: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
-}
-
-.search-form__cell--id {
-  font-family: monospace;
-  font-size: 12px;
-  color: var(--color-main-blue);
-  font-weight: var(--font-weight-semibold);
-}
-
-.search-form__cell--name {
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-black);
-}
-
-.search-form__cell--cat,
-.search-form__cell--mfr {
-  color: var(--color-pale-black);
-  font-size: 12px;
-}
-
-.search-form__cell--chars {
-  color: var(--color-pale-black);
-  font-size: 12px;
-  white-space: normal;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
 </style>

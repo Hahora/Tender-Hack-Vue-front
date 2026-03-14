@@ -15,18 +15,25 @@ export const usePriceStore = defineStore('price', () => {
   const hasSearched = ref(false)
   const error       = ref(null)
 
-  /* ─── Геолокация ─── */
-  const userRegion      = ref('Москва')
-  const detectedRegion  = ref('')
+  /* ─── Геолокация (персистентность через localStorage) ─── */
+  const userRegion      = ref(localStorage.getItem('userRegion')      || 'Москва')
+  const detectedRegion  = ref(localStorage.getItem('detectedRegion')  || '')
   const regionDetecting = ref(false)
-  const regionDetected  = ref(false)
-  const regionConfirmed = ref(false)
+  const regionDetected  = ref(localStorage.getItem('regionDetected')  === 'true')
+  const regionConfirmed = ref(localStorage.getItem('regionConfirmed') === 'true')
 
-  /* ─── Данные закупок (STЕ из API) ─── */
+  /* ─── Данные закупок ─── */
   const procurements = ref([])
 
-  /* ─── Сырые данные НМЦК с бэка (null если данных нет) ─── */
+  /* ─── Сырые контракты для повторного вызова /nmck ─── */
+  const rawContracts = ref([])
+
+  /* ─── Данные НМЦК с бэка (null если данных нет) ─── */
   const nmckData = ref(null)
+
+  /* ─── force_include / force_exclude для /nmck ─── */
+  const forceInclude = ref([])
+  const forceExclude = ref([])
 
   /* ─── Фильтры ─── */
   const filters = ref({
@@ -47,12 +54,68 @@ export const usePriceStore = defineStore('price', () => {
   /* ─── Регионы для фильтра ─── */
   const availableRegions = REGIONS
 
+  /* ─── Вспомогательная функция: запрос с авто-обновлением токена ─── */
+  async function withAuth(fn) {
+    const auth = useAuthStore()
+    try {
+      return await fn(auth.accessToken)
+    } catch (err) {
+      if (err.status === 401) {
+        const newToken = await auth.refresh()
+        return await fn(newToken)
+      }
+      throw err
+    }
+  }
+
+  /* ─── Применить результат /nmck к procurements ─── */
+  function applyNmck(result) {
+    nmckData.value = result
+    if (!result) return
+
+    // contracts — единый список с полем status:
+    // 'used' | 'outlier' | 'force_included' | 'force_excluded'
+    const statusMap = new Map(
+      (result.contracts || []).map(item => [
+        item.contract['Идентификатор контракта'],
+        item.status,
+      ])
+    )
+
+    for (const p of procurements.value) {
+      if (!p.id.startsWith('MAN-')) {
+        const status = statusMap.get(p.contractNumber) || 'used'
+        p.contractStatus  = status
+        p.isOutlier       = status === 'outlier' || status === 'force_excluded'
+        p.manualInclude   = status === 'force_included'
+      }
+    }
+  }
+
+  /* ─── Пересчитать НМЦК (можно вызывать после force_include/force_exclude) ─── */
+  async function recalculate() {
+    if (rawContracts.value.length === 0) return
+    try {
+      const result = await withAuth(token =>
+        api.nmck({
+          contracts:     rawContracts.value,
+          date_from:     filters.value.dateFrom || null,
+          date_to:       filters.value.dateTo   || null,
+          force_include: forceInclude.value.length ? forceInclude.value : undefined,
+          force_exclude: forceExclude.value.length ? forceExclude.value : undefined,
+        }, token)
+      )
+      applyNmck(result)
+    } catch (_e) {
+      // Ошибка пересчёта — оставляем текущие данные
+    }
+  }
+
   /**
    * Выполнить поиск через бэк.
    * При 401 автоматически обновляет токен и повторяет запрос.
    */
   async function search(query) {
-    const auth    = useAuthStore()
     const trimmed = query?.trim()
     if (!trimmed) return
 
@@ -60,44 +123,64 @@ export const usePriceStore = defineStore('price', () => {
     isLoading.value   = true
     error.value       = null
     hasSearched.value = true
+    forceInclude.value = []
+    forceExclude.value = []
 
     try {
       const params = {
-        query:  trimmed,
-        region: userRegion.value || null,
+        query:     trimmed,
+        region:    filters.value.region || userRegion.value || null,
+        unit:      requestedUnit.value  || null,
+        vat:       filters.value.vatRate   || null,
+        date_from: filters.value.dateFrom  || null,
+        date_to:   filters.value.dateTo    || null,
       }
 
-      let data
-      try {
-        data = await api.search(params, auth.accessToken)
-      } catch (err) {
-        if (err.status === 401) {
-          // Токен истёк — обновляем и повторяем
-          const newToken = await auth.refresh()
-          data = await api.search(params, newToken)
-        } else {
-          throw err
-        }
-      }
+      const data = await withAuth(token => api.search(params, token))
 
-      nmckData.value = data.nmck || null
+      // contracts — всегда массив согласно API
+      rawContracts.value = data.contracts || []
 
-      procurements.value = (data.ste || []).map(item => ({
-        id:          item.ste_id,
-        steNumber:   item.ste_id,
-        name:        item.name,
-        category:    item.category || '',
-        score:       item.score    ?? 0,
-        unitPrice:   item.last_price ?? 0,
-        unit:        requestedUnit.value,
-        supplier:    '—',
-        region:      userRegion.value,
-        date:        new Date().toISOString().split('T')[0],
-        law:         '44-ФЗ',
-        isOutlier:   false,
-        isExcluded:  false,
-        manualPrice: false,
+      procurements.value = rawContracts.value.map((c, i) => ({
+        id:             c['Идентификатор контракта'] || `contract-${i}`,
+        contractNumber: c['Идентификатор контракта'] || `contract-${i}`,
+        steNumber:      c['Идентификатор СТЕ']       || '',
+        name:           c['Наименование позиции СТЕ'] || c['Наименование закупки'] || '',
+        unitPrice:      parseFloat(c['Цена за единицу']) || 0,
+        quantity:       parseFloat(c['Количество'])      || 1,
+        unit:           c['Единица измерения']           || requestedUnit.value || 'шт',
+        totalPrice:     parseFloat(c['Стоимость контракта после заключения']) || 0,
+        initialPrice:   parseFloat(c['Начальная стоимость контракта'])        || 0,
+        reduction:      c['% снижения']   || '0',
+        vatRate:        c['Ставка НДС']   || null,
+        date:           c['Дата заключения контракта'] || '',
+        region:         c['Регион заказчика']          || '',
+        supplier:       c['ИНН поставщика']            || '—',
+        customer:       c['ИНН заказчика']             || '—',
+        supplierRegion: c['Регион поставщика']         || '',
+        law:            c['Способ закупки']            || '44-ФЗ',
+        isOutlier:      false,
+        isExcluded:     false,
+        manualPrice:    false,
       }))
+
+      // Получаем НМЦК с сервера
+      if (rawContracts.value.length > 0) {
+        try {
+          const nmckResult = await withAuth(token =>
+            api.nmck({
+              contracts: rawContracts.value,
+              date_from: filters.value.dateFrom || null,
+              date_to:   filters.value.dateTo   || null,
+            }, token)
+          )
+          applyNmck(nmckResult)
+        } catch (_e) {
+          nmckData.value = null
+        }
+      } else {
+        nmckData.value = null
+      }
 
     } catch (err) {
       if (err.status === 401 || err.message === 'no_refresh_token') {
@@ -106,16 +189,30 @@ export const usePriceStore = defineStore('price', () => {
         error.value = 'Не удалось загрузить данные. Попробуйте ещё раз.'
       }
       procurements.value = []
+      rawContracts.value = []
       nmckData.value     = null
     } finally {
       isLoading.value = false
     }
   }
 
-  /* ─── Исключить/включить закупку ─── */
+  /* ─── Исключить контракт из расчёта (force_exclude) ─── */
   function toggleExclude(id) {
+    const idx = forceExclude.value.indexOf(id)
+    if (idx >= 0) forceExclude.value.splice(idx, 1)
+    else forceExclude.value.push(id)
+    recalculate()
+  }
+
+  /* ─── Включить выброс в расчёт (force_include) ─── */
+  function toggleManualInclude(id) {
+    const idx = forceInclude.value.indexOf(id)
+    if (idx >= 0) forceInclude.value.splice(idx, 1)
+    else forceInclude.value.push(id)
+    // Обновляем флаг локально до ответа сервера
     const p = procurements.value.find(p => p.id === id)
-    if (p) p.isExcluded = !p.isExcluded
+    if (p) p.manualInclude = idx < 0
+    recalculate()
   }
 
   /* ─── Изменить цену вручную ─── */
@@ -149,12 +246,6 @@ export const usePriceStore = defineStore('price', () => {
     })
   }
 
-  /* ─── Включить выброс в расчёт вручную ─── */
-  function toggleManualInclude(id) {
-    const p = procurements.value.find(p => p.id === id)
-    if (p) p.manualInclude = !p.manualInclude
-  }
-
   /* ─── Определить регион по геолокации ─── */
   async function detectRegion() {
     if (regionDetected.value || regionDetecting.value) return
@@ -174,8 +265,11 @@ export const usePriceStore = defineStore('price', () => {
       if (raw) {
         detectedRegion.value = raw
         userRegion.value     = raw
+        localStorage.setItem('userRegion',     raw)
+        localStorage.setItem('detectedRegion', raw)
       }
       regionDetected.value = true
+      localStorage.setItem('regionDetected', 'true')
     } catch (_e) {
       // Геолокация отклонена или недоступна — оставляем Москва
     } finally {
@@ -185,9 +279,12 @@ export const usePriceStore = defineStore('price', () => {
 
   /* ─── Сбросить ручные изменения ─── */
   function resetManual() {
+    forceInclude.value = []
+    forceExclude.value = []
     procurements.value = procurements.value
       .filter(p => !p.id.startsWith('MAN-'))
-      .map(p => ({ ...p, isExcluded: false, manualPrice: false }))
+      .map(p => ({ ...p, isExcluded: false, manualPrice: false, manualInclude: false }))
+    recalculate()
   }
 
   /* ─── Увеличить версию документа ─── */
@@ -198,12 +295,14 @@ export const usePriceStore = defineStore('price', () => {
   return {
     steQuery, isLoading, hasSearched, error,
     userRegion, detectedRegion, regionDetecting, regionDetected, regionConfirmed, detectRegion,
-    procurements, nmckData,
+    procurements, rawContracts, nmckData,
+    forceInclude, forceExclude,
     filters,
     requestedQty, requestedUnit,
     docVersion,
     availableRegions,
-    search,
+    withAuth,
+    search, recalculate,
     toggleExclude, toggleManualInclude, setManualPrice, addManualEntry, resetManual,
     incrementVersion,
   }

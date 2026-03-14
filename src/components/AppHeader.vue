@@ -41,6 +41,10 @@ function selectRegion(r) {
 
 const cartCount = computed(() => cart.items.length)
 
+function goHome() {
+  router.push({ name: 'home' })
+}
+
 function logout() {
   auth.logout()
   isMobileMenuOpen.value = false

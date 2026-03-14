@@ -3,24 +3,23 @@
  * Предпросмотр итогового документа обоснования НМЦ.
  * Отображает сформированный текст в стилизованном блоке.
  */
-import AppTag from '../ui/AppTag.vue'
-import { formatDate } from '../../composables/usePriceCalculation.js'
+import AppTag from "../ui/AppTag.vue";
+import { formatDate } from "../../composables/usePriceCalculation.js";
 
 defineProps({
   // Текст обоснования
-  text:       { type: String, required: true },
+  text: { type: String, required: true },
   // Название СТЕ
-  steQuery:   { type: String, default: '' },
+  steQuery: { type: String, default: "" },
   // Версия документа
-  version:    { type: Number, default: 1 },
+  version: { type: Number, default: 1 },
   // Дата формирования
-  createdAt:  { type: String, default: '' },
-})
+  createdAt: { type: String, default: "" },
+});
 </script>
 
 <template>
   <div class="doc-preview">
-
     <!-- Шапка документа -->
     <div class="doc-preview__header">
       <div class="doc-preview__meta">
@@ -36,8 +35,10 @@ defineProps({
       </div>
 
       <div class="doc-preview__date">
-        Сформировано<br>
-        <strong>{{ formatDate(createdAt || new Date().toISOString().split('T')[0]) }}</strong>
+        Сформировано<br />
+        <strong>{{
+          formatDate(createdAt || new Date().toISOString().split("T")[0])
+        }}</strong>
       </div>
     </div>
 
@@ -52,11 +53,13 @@ defineProps({
     <!-- Подвал документа -->
     <div class="doc-preview__footer">
       <p class="doc-preview__footer-note">
-        Документ сформирован автоматически сервисом расчёта НМЦ на основе данных ЕИС.
-        Подлежит проверке специалистом контрактной службы.
+        Документ сформирован автоматически сервисом расчёта НМЦ. Подлежит
+        проверке специалистом контрактной службы.
       </p>
       <div class="doc-preview__footer-line" />
-      <p class="doc-preview__footer-sign">Специалист контрактной службы: ___________________</p>
+      <p class="doc-preview__footer-sign">
+        Специалист контрактной службы: ___________________
+      </p>
     </div>
   </div>
 </template>
@@ -133,7 +136,7 @@ defineProps({
 /* --- Текст --- */
 .doc-preview__text {
   padding: var(--space-6);
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   font-size: 13px;
   line-height: 1.7;
   color: var(--color-black);

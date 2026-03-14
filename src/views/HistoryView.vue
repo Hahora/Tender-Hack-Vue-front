@@ -1,11 +1,12 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cartStore.js'
 import { formatPrice } from '../composables/usePriceCalculation.js'
 
-const router = useRouter()
-const cart   = useCartStore()
+const router     = useRouter()
+const cart       = useCartStore()
+const openSearch = inject('openSearch')
 
 const openId = ref(null)
 
@@ -58,7 +59,7 @@ function pluralPos(n) {
       </div>
       <p class="hist__empty-title">История пуста</p>
       <p class="hist__empty-sub">После формирования документа закупки появятся здесь</p>
-      <button class="hist__empty-btn" @click="router.push('/')">Начать поиск</button>
+      <button class="hist__empty-btn" @click="openSearch()">Начать поиск</button>
     </div>
 
     <!-- Список -->

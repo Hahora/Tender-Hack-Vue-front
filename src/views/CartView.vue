@@ -1,13 +1,14 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cartStore.js'
 import { usePriceStore } from '../stores/priceStore.js'
 import { formatPrice } from '../composables/usePriceCalculation.js'
 
-const router = useRouter()
-const cart   = useCartStore()
-const store  = usePriceStore()
+const router     = useRouter()
+const cart       = useCartStore()
+const store      = usePriceStore()
+const openSearch = inject('openSearch')
 
 const editingId   = ref(null)
 const editingName = ref('')
@@ -96,7 +97,7 @@ function pluralPos(n) {
       </div>
       <p class="cart__empty-title">Корзина пуста</p>
       <p class="cart__empty-sub">Добавляйте позиции из расчёта НМЦК</p>
-      <button class="cart__empty-btn" @click="router.push('/')">Начать поиск</button>
+      <button class="cart__empty-btn" @click="openSearch()">Начать поиск</button>
     </div>
 
     <!-- Список позиций -->

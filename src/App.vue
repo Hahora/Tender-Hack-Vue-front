@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, provide, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader    from './components/AppHeader.vue'
 import AppSubHeader from './components/AppSubHeader.vue'
@@ -16,14 +16,21 @@ const isSearchOpen   = ref(false)
 function onFocusSearch() {
   isSearchOpen.value = !isSearchOpen.value
   if (isSearchOpen.value) {
-    // Фокус после появления анимации
     setTimeout(() => subHeaderRef.value?.focusInput(), 50)
   }
+}
+
+
+function openSearch() {
+  isSearchOpen.value = true
+  setTimeout(() => subHeaderRef.value?.focusInput(), 50)
 }
 
 function closeSearch() {
   isSearchOpen.value = false
 }
+
+provide('openSearch', openSearch)
 
 function onKeydown(e) {
   if (e.key === 'Escape') closeSearch()

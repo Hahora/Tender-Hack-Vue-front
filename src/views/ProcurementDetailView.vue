@@ -195,7 +195,7 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith("MAN-"));
                   }}</span>
                 </div>
                 <div class="detail__field">
-                  <span class="detail__field-label">Регион</span>
+                  <span class="detail__field-label">Регион поставщика</span>
                   <span class="detail__field-value">
                     <svg
                       width="11"
@@ -210,7 +210,7 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith("MAN-"));
                         stroke-width="1.2"
                       />
                     </svg>
-                    {{ procurement.region }}
+                    {{ procurement.supplierRegion || procurement.region }}
                   </span>
                 </div>
                 <div class="detail__field">

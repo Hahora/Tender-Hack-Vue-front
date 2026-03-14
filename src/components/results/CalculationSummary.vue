@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import AppButton from "../ui/AppButton.vue";
 import { formatPrice } from "../../composables/usePriceCalculation.js";
@@ -18,20 +18,49 @@ const props = defineProps({
   unit: { type: String, default: "шт" },
   justificationText: { type: String, default: "" },
   docVersion: { type: Number, default: 1 },
-  isRecalculating: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "go-document",
-  "recalculate",
   "update:requestedQty",
-  "update:unit",
+  "set-nmc",
 ]);
 
 const showJustification = ref(false);
 const addedToCart = ref(false);
 
-const hasEnoughData = computed(() => props.statistics.count >= 3);
+// Редактирование НМЦ вручную
+const editingNmc  = ref(false);
+const nmcDraft    = ref('');
+
+function startEditNmc() {
+  nmcDraft.value  = props.totalNmts ? String(Math.round(props.totalNmts)) : ''
+  editingNmc.value = true
+  nextTick(() => { document.querySelector('.cs__nmc-input')?.select() })
+}
+
+const manualNmc = ref(false);
+
+function commitNmc() {
+  const val = parseFloat(String(nmcDraft.value).replace(',', '.').replace(/\s/g, ''))
+  if (val > 0) { emit('set-nmc', val); manualNmc.value = true }
+  editingNmc.value = false
+}
+
+const hasEnoughData = computed(() => manualNmc.value || props.statistics.count >= 3);
+
+function acQuery(filter) {
+  const f = priceStore.filters
+  return {
+    q:         priceStore.steQuery        || undefined,
+    region:    f.region                   || undefined,
+    vat:       f.vatRate                  || undefined,
+    date_from: f.dateFrom                 || undefined,
+    date_to:   f.dateTo                   || undefined,
+    unit:      priceStore.requestedUnit !== 'шт' ? priceStore.requestedUnit : undefined,
+    filter:    filter                     || undefined,
+  }
+}
 
 function addToCart() {
   cart.addItem({
@@ -89,16 +118,10 @@ const medianPosition = computed(() => {
             @input="emit('update:requestedQty', +$event.target.value)"
           />
         </label>
-        <label class="cs__param-item">
+        <div class="cs__param-item">
           <span class="cs__param-name">Единица</span>
-          <input
-            type="text"
-            class="cs__param-input cs__param-input--unit"
-            placeholder="шт"
-            :value="unit"
-            @input="emit('update:unit', $event.target.value)"
-          />
-        </label>
+          <div class="cs__param-unit-display">{{ unit || 'шт' }}</div>
+        </div>
       </div>
     </div>
 
@@ -106,20 +129,20 @@ const medianPosition = computed(() => {
     <div class="cs__sources">
       <span class="cs__sources-label">Контрактов</span>
       <div class="cs__sources-chips">
-        <button class="cs__chip cs__chip--btn" @click="router.push({ name: 'all-contracts' })">
+        <button class="cs__chip cs__chip--btn" @click="router.push({ name: 'all-contracts', query: acQuery() })">
           Всего&nbsp;<strong>{{
             statistics.count + statistics.outlierCount + statistics.excludedCount
           }}</strong>
         </button>
-        <button class="cs__chip cs__chip--btn cs__chip--green" @click="router.push({ name: 'all-contracts', query: { filter: 'active' } })">
+        <button class="cs__chip cs__chip--btn cs__chip--green" @click="router.push({ name: 'all-contracts', query: acQuery('active') })">
           <span class="cs__dot cs__dot--green" />
           Учтено&nbsp;<strong>{{ statistics.count }}</strong>
         </button>
-        <button class="cs__chip cs__chip--btn cs__chip--orange" @click="router.push({ name: 'all-contracts', query: { filter: 'outlier' } })">
+        <button class="cs__chip cs__chip--btn cs__chip--orange" @click="router.push({ name: 'all-contracts', query: acQuery('outlier') })">
           <span class="cs__dot cs__dot--orange" />
           Выброс&nbsp;<strong>{{ statistics.outlierCount }}</strong>
         </button>
-        <button v-if="statistics.excludedCount" class="cs__chip cs__chip--btn cs__chip--gray" @click="router.push({ name: 'all-contracts' })">
+        <button v-if="statistics.excludedCount" class="cs__chip cs__chip--btn cs__chip--gray" @click="router.push({ name: 'all-contracts', query: acQuery() })">
           <span class="cs__dot cs__dot--gray" />
           Вручную&nbsp;<strong>{{ statistics.excludedCount }}</strong>
         </button>
@@ -157,14 +180,30 @@ const medianPosition = computed(() => {
       </div>
       <div class="cs__nmc-wrap">
         <span class="cs__nmc-label">= НМЦ контракта</span>
+        <input
+          v-if="editingNmc"
+          v-model="nmcDraft"
+          type="number"
+          min="0"
+          class="cs__nmc-input"
+          @blur="commitNmc"
+          @keydown.enter.prevent="commitNmc"
+          @keydown.escape="editingNmc = false"
+        />
         <div
-          class="cs__nmc"
+          v-else
+          class="cs__nmc cs__nmc--editable"
           :class="{
             'cs__nmc--ready': hasEnoughData,
             'cs__nmc--dim': !hasEnoughData,
           }"
+          title="Нажмите чтобы изменить вручную"
+          @click="startEditNmc"
         >
           {{ formatPrice(totalNmts) }}
+          <svg class="cs__nmc-edit-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path d="M8.5 1.5l2 2L4 10H2v-2L8.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
         </div>
       </div>
     </div>
@@ -213,54 +252,28 @@ const medianPosition = computed(() => {
         </svg>
         {{ addedToCart ? 'Добавлено!' : 'Добавить в закупку' }}
       </AppButton>
-      <div class="cs__actions-row">
-        <AppButton
-          variant="outline"
-          size="md"
-          block
-          :loading="isRecalculating"
-          @click="$emit('recalculate')"
-        >
-          <svg
-            v-if="!isRecalculating"
-            width="13"
-            height="13"
-            viewBox="0 0 14 14"
-            fill="none"
-          >
-            <path
-              d="M2 7a5 5 0 0 1 8.5-3.5L12 2M12 2v3H9M12 7a5 5 0 0 1-8.5 3.5L2 12M2 12V9h3"
-              stroke="currentColor"
-              stroke-width="1.3"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          Пересчитать
-        </AppButton>
-        <AppButton
-          variant="outline"
-          size="md"
-          block
-          :disabled="!hasEnoughData"
-          @click="$emit('go-document')"
-        >
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L8 1z"
-              stroke="currentColor"
-              stroke-width="1.3"
-            />
-            <path
-              d="M8 1v5h5M5 8h4M5 10.5h3"
-              stroke="currentColor"
-              stroke-width="1.3"
-              stroke-linecap="round"
-            />
-          </svg>
-          Документ
-        </AppButton>
-      </div>
+      <AppButton
+        variant="outline"
+        size="md"
+        block
+        :disabled="!hasEnoughData"
+        @click="$emit('go-document')"
+      >
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path
+            d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L8 1z"
+            stroke="currentColor"
+            stroke-width="1.3"
+          />
+          <path
+            d="M8 1v5h5M5 8h4M5 10.5h3"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+          />
+        </svg>
+        Документ
+      </AppButton>
     </div>
 
     <!-- Обоснование — в самом низу, раскрывается по клику -->
@@ -448,6 +461,17 @@ const medianPosition = computed(() => {
 
 .cs__param-input--unit {
   text-align: left;
+}
+
+.cs__param-unit-display {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
 }
 
 /* ===== Источники — одна строка чипов ===== */
@@ -674,14 +698,33 @@ const medianPosition = computed(() => {
   gap: var(--space-2);
 }
 
-/* Вторая строка кнопок — рядом */
-.cs__actions-row {
+.cs__nmc--editable {
+  cursor: pointer;
   display: flex;
-  gap: var(--space-2);
+  align-items: center;
+  gap: 5px;
+}
+.cs__nmc--editable:hover { opacity: 0.8; }
+
+.cs__nmc-edit-icon {
+  color: var(--color-pale-black);
+  flex-shrink: 0;
+  opacity: 0.5;
 }
 
-.cs__actions-row > * {
-  flex: 1;
+.cs__nmc-input {
+  font-family: var(--font-family);
+  font-size: 1.45rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-main-blue);
+  background: var(--color-pale-blue);
+  border: 1.5px solid var(--color-main-blue);
+  border-radius: var(--radius-base);
+  padding: 2px 8px;
+  outline: none;
+  width: 100%;
+  text-align: right;
 }
 
 /* ===== Обоснование ===== */

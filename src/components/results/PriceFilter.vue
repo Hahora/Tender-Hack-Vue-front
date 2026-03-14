@@ -5,9 +5,10 @@ const props = defineProps({
   modelValue: { type: Object, required: true },
   regions:    { type: Array,  default: () => [] },
   activeCount:{ type: Number, default: 0 },
+  unit:       { type: String, default: 'шт' },
 })
 
-const emit = defineEmits(['update:modelValue', 'reset'])
+const emit = defineEmits(['update:modelValue', 'update:unit', 'reset', 'recalculate'])
 
 function update(key, val) {
   emit('update:modelValue', { ...props.modelValue, [key]: val })
@@ -49,6 +50,90 @@ function onRegionBlur(e) {
     showRegionDrop.value = false
     regionSearch.value   = ''
   }
+}
+
+/* ─── Autocomplete для НДС ─── */
+const VAT_OPTIONS = ['5%', '10%', '20%', '22%', 'Без НДС']
+
+const showVatDrop = ref(false)
+
+const filteredVat = computed(() => {
+  const q = (props.modelValue.vatRate || '').toString().trim().toLowerCase()
+  if (!q) return VAT_OPTIONS
+  return VAT_OPTIONS.filter(v => v.toLowerCase().includes(q))
+})
+
+function onVatInput(e) {
+  update('vatRate', e.target.value)
+  showVatDrop.value = true
+}
+
+function selectVat(v) {
+  update('vatRate', v)
+  showVatDrop.value = false
+}
+
+function clearVat() {
+  update('vatRate', '')
+  showVatDrop.value = false
+}
+
+function normalizeVat(val) {
+  const v = val.trim()
+  if (!v) return ''
+  // 0 или 0% → Без НДС
+  if (v === '0' || v === '0%') return 'Без НДС'
+  // Точное совпадение
+  if (VAT_OPTIONS.includes(v)) return v
+  // Совпадение без учёта регистра
+  const match = VAT_OPTIONS.find(o => o.toLowerCase() === v.toLowerCase())
+  return match || ''
+}
+
+function onVatBlur(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    showVatDrop.value = false
+    const normalized = normalizeVat(props.modelValue.vatRate || '')
+    update('vatRate', normalized)
+  }
+}
+
+/* ─── Autocomplete для единицы измерения ─── */
+const ALL_UNITS = [
+  'шт', 'уп', 'упак', 'компл', 'набор', 'пара', 'рул', 'лист', 'пач',
+  'кг', 'г', 'мг', 'т',
+  'л', 'мл', 'м³',
+  'м', 'см', 'мм', 'км', 'м²', 'мп',
+  'А', 'В', 'Вт', 'кВт', 'МВт', 'кВт·ч',
+  'усл.ед', 'услуга', 'работа',
+]
+
+const showUnitDrop = ref(false)
+
+const filteredUnits = computed(() => {
+  const q = props.unit.trim().toLowerCase()
+  if (!q) return ALL_UNITS
+  return ALL_UNITS.filter(u => u.toLowerCase().includes(q))
+})
+
+function onUnitInput(e) {
+  emit('update:unit', e.target.value)
+  showUnitDrop.value = true
+}
+
+function selectUnit(u) {
+  emit('update:unit', u)
+  showUnitDrop.value = false
+}
+
+function onUnitBlur(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    showUnitDrop.value = false
+  }
+}
+
+function onUnitFocus() {
+  showUnitDrop.value = true
 }
 </script>
 
@@ -114,24 +199,69 @@ function onRegionBlur(e) {
 
     <div class="pf__sep" />
 
-    <!-- НДС -->
+    <!-- НДС — autocomplete -->
     <div class="pf__field">
       <label class="pf__field-label">НДС</label>
-      <div class="pf__select-wrap">
-        <select
-          class="pf__select pf__select--narrow"
+      <div class="pf__unit-wrap" tabindex="-1" @blur.capture="onVatBlur">
+        <input
+          type="text"
+          class="pf__unit pf__vat"
           :value="modelValue.vatRate"
-          @change="update('vatRate', $event.target.value)"
-        >
-          <option value="">Любой</option>
-          <option value="20">20%</option>
-          <option value="10">10%</option>
-          <option value="0">0%</option>
-          <option value="-1">Без НДС</option>
-        </select>
-        <svg class="pf__chevron" width="10" height="6" viewBox="0 0 10 6" fill="none">
-          <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+          :class="{ 'pf__unit--active': modelValue.vatRate }"
+          placeholder="Любой"
+          autocomplete="off"
+          @input="onVatInput"
+          @focus="showVatDrop = true"
+          @keydown.escape="showVatDrop = false"
+          @keydown.enter.prevent="showVatDrop = false"
+        />
+        <div v-if="showVatDrop" class="pf__unit-drop">
+          <button
+            class="pf__unit-item"
+            :class="{ 'pf__unit-item--active': !modelValue.vatRate }"
+            tabindex="0"
+            @mousedown.prevent="clearVat"
+          >Любой</button>
+          <button
+            v-for="v in filteredVat"
+            :key="v"
+            class="pf__unit-item"
+            :class="{ 'pf__unit-item--active': v === modelValue.vatRate }"
+            tabindex="0"
+            @mousedown.prevent="selectVat(v)"
+          >{{ v }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf__sep" />
+
+    <!-- Единица измерения — autocomplete -->
+    <div class="pf__field">
+      <label class="pf__field-label">Ед. изм.</label>
+      <div class="pf__unit-wrap" tabindex="-1" @blur.capture="onUnitBlur">
+        <input
+          type="text"
+          class="pf__unit"
+          :value="unit"
+          :class="{ 'pf__unit--active': unit && unit !== 'шт' }"
+          placeholder="шт"
+          autocomplete="off"
+          @input="onUnitInput"
+          @focus="onUnitFocus"
+          @keydown.escape="showUnitDrop = false"
+          @keydown.enter.prevent="showUnitDrop = false"
+        />
+        <div v-if="showUnitDrop && filteredUnits.length" class="pf__unit-drop">
+          <button
+            v-for="u in filteredUnits"
+            :key="u"
+            class="pf__unit-item"
+            :class="{ 'pf__unit-item--active': u === unit }"
+            tabindex="0"
+            @mousedown.prevent="selectUnit(u)"
+          >{{ u }}</button>
+        </div>
       </div>
     </div>
 
@@ -159,15 +289,26 @@ function onRegionBlur(e) {
       />
     </div>
 
-    <!-- Кнопка сброса -->
-    <Transition name="pf-reset">
-      <button v-if="activeCount" class="pf__reset" @click="$emit('reset')">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-        Сбросить ({{ activeCount }})
-      </button>
-    </Transition>
+    <!-- Правая группа: сброс + пересчитать -->
+    <div class="pf__right-group">
+      <Transition name="pf-reset">
+        <button v-if="activeCount" class="pf__reset" @click="$emit('reset')">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+          Сбросить ({{ activeCount }})
+        </button>
+      </Transition>
+      <Transition name="pf-reset">
+        <button v-if="activeCount" class="pf__recalc" @click="$emit('recalculate')">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M2 7a5 5 0 0 1 8.5-3.5L12 2M12 2v3H9M12 7a5 5 0 0 1-8.5 3.5L2 12M2 12V9h3"
+              stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Пересчитать
+        </button>
+      </Transition>
+    </div>
   </div>
 </template>
 
@@ -332,39 +473,6 @@ function onRegionBlur(e) {
   background: var(--color-pale-blue);
 }
 
-/* ─── Нативный select (НДС) ─── */
-.pf__select-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.pf__select {
-  height: 32px;
-  padding: 0 28px 0 10px;
-  font-family: var(--font-family);
-  font-size: var(--font-size-sm);
-  color: var(--color-black);
-  background: #fff;
-  border: 1px solid var(--color-gray-blue);
-  border-radius: var(--radius-base);
-  outline: none;
-  appearance: none;
-  cursor: pointer;
-  min-width: 120px;
-  transition: border-color var(--transition-fast);
-}
-
-.pf__select:focus { border-color: var(--color-main-blue); }
-.pf__select--narrow { min-width: 80px; }
-
-.pf__chevron {
-  position: absolute;
-  right: 8px;
-  color: var(--color-pale-black);
-  pointer-events: none;
-  flex-shrink: 0;
-}
 
 /* ─── Дата ─── */
 .pf__date {
@@ -383,6 +491,70 @@ function onRegionBlur(e) {
 
 .pf__date:focus { border-color: var(--color-main-blue); }
 
+/* ─── Единица измерения — autocomplete ─── */
+.pf__unit-wrap {
+  position: relative;
+  outline: none;
+}
+
+.pf__unit {
+  height: 32px;
+  width: 72px;
+  padding: 0 8px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  color: var(--color-black);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  outline: none;
+  transition: border-color var(--transition-fast);
+  display: block;
+}
+.pf__unit:focus { border-color: var(--color-main-blue); }
+.pf__vat { width: 90px; }
+.pf__unit--active {
+  border-color: var(--color-main-blue);
+  color: var(--color-main-blue);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pf__unit-drop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 120px;
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 300;
+  padding: 4px 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pf__unit-item {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  color: var(--color-black);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+.pf__unit-item:hover { background: var(--color-pale-blue); }
+.pf__unit-item--active {
+  color: var(--color-main-blue);
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-pale-blue);
+}
+
 /* ─── Кнопка сброса ─── */
 .pf__reset {
   display: inline-flex;
@@ -399,10 +571,37 @@ function onRegionBlur(e) {
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--transition-fast);
-  margin-left: auto;
 }
 
 .pf__reset:hover { background: #fbd7d5; }
+
+/* ─── Правая группа кнопок ─── */
+.pf__right-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* ─── Кнопка пересчитать ─── */
+.pf__recalc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+  background: var(--color-main-blue);
+  border: 1px solid var(--color-main-blue);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+.pf__recalc:hover { background: #1a3a6e; border-color: #1a3a6e; }
 
 .pf-reset-enter-active, .pf-reset-leave-active {
   transition: opacity 200ms ease, transform 200ms ease;

@@ -2,8 +2,10 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { formatPrice } from "../../composables/usePriceCalculation.js";
+import { usePriceStore } from "../../stores/priceStore.js";
 
 const router = useRouter();
+const store  = usePriceStore();
 
 const props = defineProps({
   procurement: { type: Object, required: true },
@@ -17,7 +19,17 @@ function goToSteDetail() {
 }
 
 function goToContracts() {
-  router.push({ name: "contracts", params: { ste: props.procurement.steNumber } });
+  router.push({
+    name: "contracts",
+    params: { ste: props.procurement.steNumber },
+    query: {
+      q:         store.steQuery            || undefined,
+      region:    store.filters.region      || undefined,
+      date_from: store.filters.dateFrom    || undefined,
+      date_to:   store.filters.dateTo      || undefined,
+      vat:       store.filters.vatRate     || undefined,
+    },
+  });
 }
 </script>
 
@@ -47,7 +59,11 @@ function goToContracts() {
               <span class="prc__price">{{ formatPrice(procurement.unitPrice) }}</span>
               <span class="prc__price-unit">&nbsp;/&nbsp;{{ procurement.unit }}</span>
             </div>
-            <div class="prc__price-note">по последнему контракту</div>
+            <div class="prc__price-meta">
+              <span v-if="procurement.date" class="prc__price-note">{{ procurement.date }}</span>
+              <span v-if="procurement.supplierRegion || procurement.region" class="prc__price-note">· {{ procurement.supplierRegion || procurement.region }}</span>
+              <span v-if="procurement.vatRate" class="prc__price-note">· НДС {{ procurement.vatRate }}</span>
+            </div>
           </div>
           <div class="prc__actions">
             <button v-if="!isManualEntry" class="prc__action" @click="goToContracts">

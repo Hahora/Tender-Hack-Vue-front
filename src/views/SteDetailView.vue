@@ -1,14 +1,33 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { STE_CATALOG } from '../data/mockProcurements.js'
+import { usePriceStore } from '../stores/priceStore.js'
+import { api } from '../api/api.js'
 
 const route  = useRoute()
 const router = useRouter()
+const store  = usePriceStore()
 
-const steId = route.params.id
+const steId     = route.params.id
+const ste       = ref(null)
+const isLoading = ref(false)
+const notFound  = ref(false)
 
-const ste = computed(() => STE_CATALOG.find(s => s.id === steId) || null)
+const characteristics = computed(() => {
+  if (!ste.value?.characteristics) return []
+  return Object.entries(ste.value.characteristics)
+})
+
+onMounted(async () => {
+  isLoading.value = true
+  try {
+    ste.value = await store.withAuth(token => api.ste(steId, token))
+  } catch (_e) {
+    notFound.value = true
+  } finally {
+    isLoading.value = false
+  }
+})
 </script>
 
 <template>
@@ -22,7 +41,14 @@ const ste = computed(() => STE_CATALOG.find(s => s.id === steId) || null)
       Назад
     </button>
 
-    <div v-if="!ste" class="sd__empty">СТЕ не найдена</div>
+    <div v-if="isLoading" class="sd__loading">
+      <div class="sd__spinner" />
+      <div>
+        <p class="sd__loading-title">Загрузка данных…</p>
+        <p class="sd__loading-sub">Получаем информацию по СТЕ</p>
+      </div>
+    </div>
+    <div v-else-if="notFound || !ste" class="sd__empty">СТЕ не найдена</div>
 
     <template v-else>
 
@@ -32,39 +58,53 @@ const ste = computed(() => STE_CATALOG.find(s => s.id === steId) || null)
           <p class="sd__eyebrow">Справочник технических элементов</p>
           <h1 class="sd__title">{{ ste.name }}</h1>
         </div>
-        <span class="sd__id-badge">{{ ste.id }}</span>
+        <span class="sd__id-badge">{{ ste.ste_id }}</span>
       </div>
 
       <!-- Основные поля -->
       <div class="sd__info-card">
         <div class="sd__info-row">
           <span class="sd__info-label">Идентификатор</span>
-          <span class="sd__info-val sd__info-val--mono">{{ ste.id }}</span>
+          <span class="sd__info-val sd__info-val--mono">{{ ste.ste_id }}</span>
         </div>
         <div class="sd__info-row">
           <span class="sd__info-label">Наименование</span>
           <span class="sd__info-val">{{ ste.name }}</span>
         </div>
-        <div class="sd__info-row">
+        <div v-if="ste.category" class="sd__info-row">
           <span class="sd__info-label">Категория</span>
           <span class="sd__info-val">{{ ste.category }}</span>
         </div>
-        <div class="sd__info-row">
+        <div v-if="ste.manufacturer" class="sd__info-row">
           <span class="sd__info-label">Производитель</span>
           <span class="sd__info-val">{{ ste.manufacturer }}</span>
         </div>
-        <div class="sd__info-row">
-          <span class="sd__info-label">Характеристики</span>
-          <span class="sd__info-val">{{ ste.characteristics }}</span>
-        </div>
-        <div class="sd__info-row">
-          <span class="sd__info-label">Единица измерения</span>
-          <span class="sd__info-val">{{ ste.unit }}</span>
+      </div>
+
+      <!-- Характеристики -->
+      <div v-if="characteristics.length" class="sd__chars-card">
+        <div class="sd__chars-title">Характеристики</div>
+        <div v-for="[key, val] in characteristics" :key="key" class="sd__info-row">
+          <span class="sd__info-label">{{ key }}</span>
+          <span class="sd__info-val">{{ val }}</span>
         </div>
       </div>
 
       <!-- Кнопка перехода к контрактам -->
-      <button class="sd__contracts-btn" @click="router.push({ name: 'contracts' })">
+      <button
+        class="sd__contracts-btn"
+        @click="router.push({
+          name: 'contracts',
+          params: { ste: ste.ste_id },
+          query: {
+            q:         store.steQuery          || undefined,
+            region:    store.filters.region    || undefined,
+            date_from: store.filters.dateFrom  || undefined,
+            date_to:   store.filters.dateTo    || undefined,
+            vat:       store.filters.vatRate   || undefined,
+          },
+        })"
+      >
         <div class="sd__contracts-btn-left">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M4 3h9l4 4v10a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
@@ -154,6 +194,25 @@ const ste = computed(() => STE_CATALOG.find(s => s.id === steId) || null)
   margin-bottom: var(--space-4);
 }
 
+.sd__chars-card {
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+.sd__chars-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-pale-blue);
+  border-bottom: 1px solid var(--color-gray-blue);
+}
+
 .sd__info-row {
   display: flex;
   align-items: baseline;
@@ -228,5 +287,42 @@ const ste = computed(() => STE_CATALOG.find(s => s.id === steId) || null)
   text-align: center;
   color: var(--color-pale-black);
   font-size: var(--font-size-md);
+}
+
+/* Загрузка */
+.sd__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+}
+
+.sd__spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--color-pale-blue);
+  border-top-color: var(--color-main-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sd__loading-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  margin-bottom: 3px;
+}
+
+.sd__loading-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
 }
 </style>

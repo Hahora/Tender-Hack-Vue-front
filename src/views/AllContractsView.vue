@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { usePriceStore } from "../stores/priceStore.js";
 import { formatPrice, formatDate } from "../composables/usePriceCalculation.js";
@@ -8,9 +8,38 @@ const router = useRouter();
 const route = useRoute();
 const store = usePriceStore();
 
-if (!store.hasSearched) {
-  router.replace("/");
-}
+onMounted(async () => {
+  const q = route.query.q
+  if (!q && !store.hasSearched) {
+    router.replace('/')
+    return
+  }
+  if (q && (!store.hasSearched || store.steQuery !== q)) {
+    // Восстанавливаем фильтры из URL перед поиском
+    store.filters = {
+      region:   String(route.query.region   || ''),
+      vatRate:  String(route.query.vat      || ''),
+      dateFrom: String(route.query.date_from || ''),
+      dateTo:   String(route.query.date_to   || ''),
+      outliers: 'all',
+    }
+    store.requestedUnit = route.query.unit ? String(route.query.unit) : 'шт'
+    await store.search(q)
+  }
+  // Если q отсутствует в URL — добавляем со всеми фильтрами
+  if (store.steQuery && !route.query.q) {
+    const f = store.filters
+    router.replace({ query: {
+      ...route.query,
+      q:         store.steQuery,
+      region:    f.region   || undefined,
+      vat:       f.vatRate  || undefined,
+      date_from: f.dateFrom || undefined,
+      date_to:   f.dateTo   || undefined,
+      unit:      store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+    }})
+  }
+})
 
 const initFilter = route.query.filter;
 const activeFilters = ref(initFilter ? new Set([initFilter]) : new Set());
@@ -32,7 +61,7 @@ const contracts = computed(() => {
         steNumber: p.steNumber,
         supplier: p.supplier,
         customer: p.customer,
-        region: p.region,
+        region: p.supplierRegion || p.region,
         date: p.date,
         vatRate: p.vatRate,
         items: [],
@@ -76,14 +105,23 @@ function contractTotal(items) {
   return items.reduce((sum, p) => sum + p.totalPrice, 0);
 }
 
+const confirmTarget = ref(null)
+
 function toggleContractInclude(c) {
-  const allIncluded = c.items.every((p) => !p.isOutlier || p.manualInclude);
+  confirmTarget.value = c
+}
+
+function doConfirm() {
+  const c = confirmTarget.value
+  if (!c) return
+  confirmTarget.value = null
+  const allIncluded = c.items.every((p) => !p.isOutlier || p.manualInclude)
   for (const p of c.items) {
     if (p.isOutlier) {
       if (allIncluded) {
-        if (p.manualInclude) store.toggleManualInclude(p.id);
+        if (p.manualInclude) store.toggleManualInclude(p.id)
       } else {
-        if (!p.manualInclude) store.toggleManualInclude(p.id);
+        if (!p.manualInclude) store.toggleManualInclude(p.id)
       }
     }
   }
@@ -111,12 +149,28 @@ function toggleContractInclude(c) {
       <div>
         <p class="ac__eyebrow">Все актуальные контракты по запросу</p>
         <h1 class="ac__title">{{ store.steQuery }}</h1>
+        <div class="ac__applied-filters">
+          <span v-if="store.filters.region"   class="ac__af-tag"><span class="ac__af-key">Регион:</span> {{ store.filters.region }}</span>
+          <span v-if="store.filters.vatRate"  class="ac__af-tag"><span class="ac__af-key">НДС:</span> {{ store.filters.vatRate }}</span>
+          <span v-if="store.filters.dateFrom" class="ac__af-tag"><span class="ac__af-key">С:</span> {{ store.filters.dateFrom }}</span>
+          <span v-if="store.filters.dateTo"   class="ac__af-tag"><span class="ac__af-key">По:</span> {{ store.filters.dateTo }}</span>
+          <span v-if="store.requestedUnit && store.requestedUnit !== 'шт'" class="ac__af-tag"><span class="ac__af-key">Ед.:</span> {{ store.requestedUnit }}</span>
+        </div>
       </div>
       <div class="ac__badge">{{ contracts.length }} контрактов</div>
     </div>
 
+    <!-- Загрузка -->
+    <div v-if="store.isLoading" class="ac__loading">
+      <div class="ac__spinner" />
+      <div>
+        <p class="ac__loading-title">Загружаем контракты…</p>
+        <p class="ac__loading-sub">Запрос «{{ store.steQuery || route.query.q }}»</p>
+      </div>
+    </div>
+
     <!-- Фильтр по статусу -->
-    <div class="ac__filters">
+    <div v-if="!store.isLoading" class="ac__filters">
       <button
         class="ac__filter-btn"
         :class="{ 'ac__filter-btn--active': activeFilters.size === 0 }"
@@ -143,6 +197,7 @@ function toggleContractInclude(c) {
     </div>
 
     <!-- Список -->
+    <template v-if="!store.isLoading">
     <div v-if="filtered.length === 0" class="ac__empty">
       Контракты не найдены
     </div>
@@ -157,6 +212,7 @@ function toggleContractInclude(c) {
           router.push({
             name: 'contract-detail',
             params: { number: c.contractNumber },
+            query: { steId: c.steNumber },
           })
         "
       >
@@ -225,13 +281,21 @@ function toggleContractInclude(c) {
                 </div>
                 <div class="ac__detail-row">
                   <span class="ac__tag">{{ c.region }}</span>
-                  <span class="ac__tag"
-                    >НДС {{ c.vatRate != null ? `${c.vatRate}%` : "нет" }}</span
-                  >
+                  <span class="ac__tag">НДС {{ c.vatRate || 'нет' }}</span>
                   <span class="ac__tag">{{ c.items.length }} поз.</span>
                   <button
                     class="ac__ste-tag"
-                    @click.stop="router.push({ name: 'contracts' })"
+                    @click.stop="router.push({
+                      name: 'contracts',
+                      params: { ste: c.steNumber },
+                      query: {
+                        q:         store.steQuery   || undefined,
+                        region:    store.filters.region   || undefined,
+                        date_from: store.filters.dateFrom || undefined,
+                        date_to:   store.filters.dateTo   || undefined,
+                        vat:       store.filters.vatRate  || undefined,
+                      },
+                    })"
                   >
                     {{ c.steNumber }}
                   </button>
@@ -338,6 +402,35 @@ function toggleContractInclude(c) {
         </div>
       </div>
     </div>
+    </template>
+
+    <!-- Диалог подтверждения пересчёта -->
+    <Teleport to="body">
+      <Transition name="ac-modal">
+        <div v-if="confirmTarget" class="ac__overlay" @click.self="confirmTarget = null">
+          <div class="ac__dialog">
+            <div class="ac__dialog-icon">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <circle cx="11" cy="11" r="9" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M11 7v5M11 15v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="ac__dialog-body">
+              <p class="ac__dialog-title">Будет выполнен пересчёт НМЦК</p>
+              <p class="ac__dialog-sub">
+                {{ confirmTarget.items.some(p => p.isOutlier && p.manualInclude)
+                  ? 'Выброс будет исключён из расчёта. НМЦК пересчитается автоматически.'
+                  : 'Выброс будет включён в расчёт. НМЦК пересчитается автоматически.' }}
+              </p>
+            </div>
+            <div class="ac__dialog-actions">
+              <button class="ac__dialog-cancel" @click="confirmTarget = null">Отмена</button>
+              <button class="ac__dialog-confirm" @click="doConfirm">Пересчитать</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -345,6 +438,43 @@ function toggleContractInclude(c) {
 .ac {
   padding-top: var(--space-6);
   padding-bottom: var(--space-12);
+}
+
+.ac__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+
+.ac__spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--color-pale-blue);
+  border-top-color: var(--color-main-blue);
+  border-radius: 50%;
+  animation: ac-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ac-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ac__loading-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  margin-bottom: 3px;
+}
+
+.ac__loading-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
 }
 
 .ac__back {
@@ -386,6 +516,32 @@ function toggleContractInclude(c) {
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
   color: var(--color-black);
+  margin-bottom: var(--space-2);
+}
+
+.ac__applied-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: 4px;
+}
+
+.ac__af-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.ac__af-key {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-main-blue);
 }
 
 .ac__badge {
@@ -767,4 +923,76 @@ function toggleContractInclude(c) {
   background: #cceedd;
   border-color: #0a7a52;
 }
+
+/* Диалог подтверждения */
+.ac__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.ac__dialog {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: var(--space-6);
+  max-width: 380px;
+  width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ac__dialog-icon {
+  color: var(--color-main-blue);
+  display: flex;
+}
+.ac__dialog-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-black);
+  margin-bottom: 4px;
+}
+.ac__dialog-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
+  line-height: 1.5;
+}
+.ac__dialog-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+.ac__dialog-cancel {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.ac__dialog-cancel:hover { background: #dce8f5; }
+.ac__dialog-confirm {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+  background: var(--color-main-blue);
+  border: 1px solid var(--color-main-blue);
+  border-radius: var(--radius-base);
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+.ac__dialog-confirm:hover { opacity: 0.88; }
+
+.ac-modal-enter-active { transition: opacity 180ms ease; }
+.ac-modal-leave-active { transition: opacity 150ms ease; }
+.ac-modal-enter-from, .ac-modal-leave-to { opacity: 0; }
 </style>

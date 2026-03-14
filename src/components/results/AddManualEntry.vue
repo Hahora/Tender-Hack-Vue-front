@@ -1,69 +1,64 @@
 <script setup>
-/**
- * Форма ручного добавления позиции в расчёт.
- * Позволяет пользователю ввести цену, поставщика, регион и дату
- * для позиций, по которым не найдены аналоги в ЕИС.
- */
-import { ref, reactive } from 'vue'
-import AppInput  from '../ui/AppInput.vue'
-import AppSelect from '../ui/AppSelect.vue'
-import AppButton from '../ui/AppButton.vue'
-import { REGIONS } from '../../data/mockProcurements.js'
+import { ref, reactive } from "vue";
+import AppInput from "../ui/AppInput.vue";
+import AppSelect from "../ui/AppSelect.vue";
+import AppButton from "../ui/AppButton.vue";
+import { REGIONS } from "../../data/mockProcurements.js";
 
-const emit = defineEmits(['add', 'cancel'])
+const emit = defineEmits(["add", "cancel"]);
 
 // Поля формы
 const form = reactive({
-  unitPrice: '',
-  quantity:  1,
-  supplier:  '',
-  region:    '',
-  date:      new Date().toISOString().split('T')[0],
-  unit:      'шт',
-})
+  unitPrice: "",
+  quantity: 1,
+  supplier: "",
+  region: "",
+  date: new Date().toISOString().split("T")[0],
+  unit: "шт",
+});
 
 // Ошибки валидации
-const errors = reactive({ unitPrice: '', quantity: '' })
+const errors = reactive({ unitPrice: "", quantity: "" });
 
-const UNIT_OPTIONS = ['шт', 'кг', 'л', 'м', 'упак', 'компл', 'пачка', 'рул']
+const UNIT_OPTIONS = ["шт", "кг", "л", "м", "упак", "компл", "пачка", "рул"];
 
 function validate() {
-  errors.unitPrice = ''
-  errors.quantity  = ''
-  let ok = true
+  errors.unitPrice = "";
+  errors.quantity = "";
+  let ok = true;
 
-  const price = parseFloat(String(form.unitPrice).replace(',', '.'))
+  const price = parseFloat(String(form.unitPrice).replace(",", "."));
   if (!form.unitPrice || isNaN(price) || price <= 0) {
-    errors.unitPrice = 'Введите корректную цену больше нуля'
-    ok = false
+    errors.unitPrice = "Введите корректную цену больше нуля";
+    ok = false;
   }
 
-  const qty = parseInt(form.quantity)
+  const qty = parseInt(form.quantity);
   if (!qty || qty < 1) {
-    errors.quantity = 'Количество должно быть не менее 1'
-    ok = false
+    errors.quantity = "Количество должно быть не менее 1";
+    ok = false;
   }
 
-  return ok
+  return ok;
 }
 
 function submit() {
-  if (!validate()) return
-  emit('add', {
-    unitPrice: parseFloat(String(form.unitPrice).replace(',', '.')),
-    quantity:  parseInt(form.quantity),
-    supplier:  form.supplier || '—',
-    region:    form.region,
-    date:      form.date,
-    unit:      form.unit,
-  })
+  if (!validate()) return;
+  emit("add", {
+    unitPrice: parseFloat(String(form.unitPrice).replace(",", ".")),
+    quantity: parseInt(form.quantity),
+    supplier: form.supplier || "—",
+    region: form.region,
+    date: form.date,
+    unit: form.unit,
+  });
 
   // Сброс формы
-  form.unitPrice = ''
-  form.quantity  = 1
-  form.supplier  = ''
-  form.region    = ''
-  form.date      = new Date().toISOString().split('T')[0]
+  form.unitPrice = "";
+  form.quantity = 1;
+  form.supplier = "";
+  form.region = "";
+  form.date = new Date().toISOString().split("T")[0];
 }
 </script>
 
@@ -71,7 +66,8 @@ function submit() {
   <div class="add-entry">
     <h4 class="add-entry__title">Добавить позицию вручную</h4>
     <p class="add-entry__hint">
-      Используйте, если не удалось найти аналоги в ЕИС или нужно добавить прайс-лист поставщика
+      Используйте, если не удалось найти аналоги в ЕИС или нужно добавить
+      прайс-лист поставщика
     </p>
 
     <div class="add-entry__grid">
@@ -96,11 +92,7 @@ function submit() {
       />
 
       <!-- Единица измерения -->
-      <AppSelect
-        v-model="form.unit"
-        label="Единица"
-        :options="UNIT_OPTIONS"
-      />
+      <AppSelect v-model="form.unit" label="Единица" :options="UNIT_OPTIONS" />
 
       <!-- Поставщик -->
       <AppInput
@@ -118,11 +110,7 @@ function submit() {
       />
 
       <!-- Дата -->
-      <AppInput
-        v-model="form.date"
-        type="date"
-        label="Дата"
-      />
+      <AppInput v-model="form.date" type="date" label="Дата" />
     </div>
 
     <!-- Кнопки -->

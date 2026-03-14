@@ -438,7 +438,7 @@ const STATS = [
 
 /* Поиск */
 .home__search {
-  max-width: 620px;
+  max-width: 640px;
 }
 
 /* Примеры */
@@ -447,6 +447,7 @@ const STATS = [
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+  max-width: 640px;
 }
 
 .home__examples-label {

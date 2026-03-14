@@ -15,6 +15,7 @@ const filteredRegions = computed(() => {
 
 function confirm() {
   store.regionConfirmed = true
+  localStorage.setItem('regionConfirmed', 'true')
 }
 
 function selectRegion(region) {
@@ -22,6 +23,8 @@ function selectRegion(region) {
   store.regionConfirmed = true
   showDrop.value        = false
   search.value          = ''
+  localStorage.setItem('userRegion',      region)
+  localStorage.setItem('regionConfirmed', 'true')
 }
 
 function toggleDrop() {

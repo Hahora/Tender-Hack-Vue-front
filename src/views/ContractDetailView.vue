@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePriceStore } from '../stores/priceStore.js'
+import { api } from '../api/api.js'
 import { formatPrice, formatDate } from '../composables/usePriceCalculation.js'
 
 const route  = useRoute()
@@ -9,13 +10,61 @@ const router = useRouter()
 const store  = usePriceStore()
 
 const contractNumber = route.params.number
+const steId          = route.query.steId
 
-// Все закупки по этому контракту
-const procurements = computed(() =>
+const isLoading = ref(false)
+const apiFetched = ref([]) // procurements fetched from API
+
+// Из стора
+const storeItems = computed(() =>
   store.procurements.filter(p => p.contractNumber === contractNumber)
 )
 
+// Итоговый список: стор приоритетнее
+const procurements = computed(() =>
+  storeItems.value.length ? storeItems.value : apiFetched.value
+)
+
 const first = computed(() => procurements.value[0] || null)
+
+function mapContract(c, i) {
+  return {
+    id:             c['Идентификатор контракта'] || `contract-${i}`,
+    contractNumber: c['Идентификатор контракта'] || `contract-${i}`,
+    steNumber:      c['Идентификатор СТЕ']       || '',
+    name:           c['Наименование позиции СТЕ'] || c['Наименование закупки'] || '',
+    unitPrice:      parseFloat(c['Цена за единицу']) || 0,
+    quantity:       parseFloat(c['Количество'])      || 1,
+    unit:           c['Единица измерения']           || 'шт',
+    totalPrice:     parseFloat(c['Стоимость контракта после заключения']) || 0,
+    vatRate:        c['Ставка НДС']   ?? null,
+    date:           c['Дата заключения контракта'] || '',
+    region:         c['Регион заказчика']          || '',
+    supplierRegion: c['Регион поставщика']         || '',
+    supplier:       c['ИНН поставщика']            || '—',
+    customer:       c['ИНН заказчика']             || '—',
+  }
+}
+
+onMounted(async () => {
+  if (storeItems.value.length || !steId) return
+  isLoading.value = true
+  try {
+    const data = await store.withAuth(token => api.contracts(steId, token))
+    const contracts = data.contracts || []
+    apiFetched.value = contracts
+      .filter(c => c['Идентификатор контракта'] === contractNumber)
+      .map(mapContract)
+    // Если нет совпадений по contractNumber — показать все контракты СТЕ
+    if (!apiFetched.value.length) {
+      apiFetched.value = contracts.map(mapContract)
+    }
+  } catch (_e) {
+    // Не удалось загрузить — оставляем пустым
+  } finally {
+    isLoading.value = false
+  }
+})
 </script>
 
 <template>
@@ -29,9 +78,10 @@ const first = computed(() => procurements.value[0] || null)
       Назад
     </button>
 
-    <div v-if="!first" class="cd__empty">Контракт не найден</div>
+    <div v-if="isLoading" class="cd__empty">Загрузка...</div>
+    <div v-else-if="!first" class="cd__empty">Контракт не найден</div>
 
-    <template v-else>
+    <template v-else-if="first">
 
       <!-- Заголовок -->
       <div class="cd__header">
@@ -52,8 +102,8 @@ const first = computed(() => procurements.value[0] || null)
           <span class="cd__meta-val">{{ first.customer }}</span>
         </div>
         <div class="cd__meta-item">
-          <span class="cd__meta-label">Регион</span>
-          <span class="cd__meta-val">{{ first.region }}</span>
+          <span class="cd__meta-label">Регион поставщика</span>
+          <span class="cd__meta-val">{{ first.supplierRegion || first.region }}</span>
         </div>
         <div class="cd__meta-item">
           <span class="cd__meta-label">Дата</span>
@@ -75,8 +125,8 @@ const first = computed(() => procurements.value[0] || null)
           <!-- Поля в 2 ряда -->
           <div class="cd__card-fields">
             <div class="cd__field">
-              <span class="cd__field-label">Регион</span>
-              <span class="cd__field-val">{{ p.region }}</span>
+              <span class="cd__field-label">Регион поставщика</span>
+              <span class="cd__field-val">{{ p.supplierRegion || p.region }}</span>
             </div>
             <div class="cd__field">
               <span class="cd__field-label">Дата</span>
@@ -91,22 +141,12 @@ const first = computed(() => procurements.value[0] || null)
               <span class="cd__field-val">{{ p.vatRate != null ? `${p.vatRate}%` : 'Без НДС' }}</span>
             </div>
             <div class="cd__field">
-              <span class="cd__field-label">Цена с НДС</span>
-              <span class="cd__field-val">
-                {{ p.priceWithVat != null ? formatPrice(p.priceWithVat) : '—' }}
-              </span>
-            </div>
-            <div class="cd__field">
               <span class="cd__field-label">Сумма</span>
               <span class="cd__field-val cd__field-val--total">{{ formatPrice(p.totalPrice) }}</span>
             </div>
             <div class="cd__field">
               <span class="cd__field-label">Цена за ед.</span>
-              <span class="cd__field-val cd__field-val--unit">{{ formatPrice(p.unitPrice) }}</span>
-            </div>
-            <div class="cd__field">
-              <span class="cd__field-label">Ед. изм.</span>
-              <span class="cd__field-val">{{ p.unit }}</span>
+              <span class="cd__field-val cd__field-val--unit">{{ formatPrice(p.unitPrice) }}&nbsp;/&nbsp;{{ p.unit }}</span>
             </div>
           </div>
 

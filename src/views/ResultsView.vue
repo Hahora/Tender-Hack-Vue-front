@@ -11,49 +11,69 @@ const router = useRouter();
 const route  = useRoute();
 const store  = usePriceStore();
 
+// ─── Черновик фильтров — редактируется пользователем, применяется только при "Пересчитать" ───
+const draftFilters = ref({
+  region:   store.userRegion || '',
+  vatRate:  '',
+  dateFrom: '',
+  dateTo:   '',
+  outliers: 'all',
+})
+const draftUnit = ref('шт')
+
 // Восстанавливаем поиск и фильтры из URL при обновлении страницы
 onMounted(async () => {
   const q = route.query.q;
   if (q) {
+    // Восстанавливаем черновик из URL
+    const restoredFilters = {
+      region:   String(route.query.region   || store.userRegion || ''),
+      vatRate:  String(route.query.vatRate  || ''),
+      dateFrom: String(route.query.dateFrom || ''),
+      dateTo:   String(route.query.dateTo   || ''),
+      outliers: 'all',
+    }
+    const restoredUnit = route.query.unit ? String(route.query.unit) : 'шт'
+
+    draftFilters.value      = restoredFilters
+    draftUnit.value         = restoredUnit
+    store.filters           = { ...restoredFilters }
+    store.requestedUnit     = restoredUnit
+
     if (!store.hasSearched || store.steQuery !== q) {
       await store.search(q);
     }
+    takeSnapshot();
   } else if (!store.hasSearched) {
     router.replace("/");
     return;
+  } else {
+    draftFilters.value = { ...store.filters }
+    draftUnit.value    = store.requestedUnit
   }
-
-  // Применяем фильтры из URL (или регион пользователя как дефолт)
-  store.filters = {
-    region:   String(route.query.region   || store.userRegion || ""),
-    vatRate:  String(route.query.vatRate  || ""),
-    dateFrom: String(route.query.dateFrom || ""),
-    dateTo:   String(route.query.dateTo   || ""),
-    outliers: "all",
-  };
 });
 
-// Синхронизируем фильтры в URL при их изменении
-watch(
-  () => store.filters,
-  (f) => {
-    router.replace({
-      query: {
-        q:        store.steQuery || undefined,
-        region:   f.region   || undefined,
-        vatRate:  f.vatRate  || undefined,
-        dateFrom: f.dateFrom || undefined,
-        dateTo:   f.dateTo   || undefined,
-      },
-    });
-  },
-  { deep: true }
-);
+// Синхронизируем применённые фильтры в URL (только после Пересчитать)
+function syncUrl() {
+  const f = store.filters
+  router.replace({
+    query: {
+      q:        store.steQuery || undefined,
+      region:   f.region   || undefined,
+      vatRate:  f.vatRate  || undefined,
+      dateFrom: f.dateFrom || undefined,
+      dateTo:   f.dateTo   || undefined,
+      unit:     store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+    },
+  })
+}
+
+watch(() => store.filters, syncUrl, { deep: true })
+watch(() => store.requestedUnit, syncUrl)
 
 const {
   processedProcurements,
   weightedAvgUnitPrice,
-  totalNmts,
   statistics,
   justificationText,
 } = usePriceCalculation(
@@ -62,41 +82,61 @@ const {
   computed(() => store.requestedQty)
 );
 
-// Если бэк вернул данные НМЦК — используем их, иначе клиентский расчёт
-const displayUnitPrice = computed(() =>
-  store.nmckData ? store.nmckData.nmck : weightedAvgUnitPrice.value
-);
+// ─── Снэпшот расчёта — обновляется только после поиска/пересчёта ───
+const snapUnitPrice     = ref(0)
+const snapUnit          = ref('шт')
+const snapStatistics    = ref({ count: 0, outlierCount: 0, excludedCount: 0, minPrice: 0, maxPrice: 0, medianPrice: 0 })
+const snapJustification = ref('')
 
-const displayTotalNmts = computed(() =>
-  displayUnitPrice.value * store.requestedQty
-);
-
-const displayStatistics = computed(() => {
+function takeSnapshot() {
   if (store.nmckData) {
-    const d = store.nmckData;
-    return {
-      count:        d.n_contracts,
-      outlierCount: d.n_outliers,
+    const d = store.nmckData
+    snapUnitPrice.value  = d.nmck
+    snapStatistics.value = {
+      count:         d.n_contracts,
+      outlierCount:  d.n_outliers,
       excludedCount: 0,
-      minPrice:     d.price_min,
-      maxPrice:     d.price_max,
-      medianPrice:  d.nmck,
-    };
+      minPrice:      d.price_min,
+      maxPrice:      d.price_max,
+      medianPrice:   d.nmck,
+    }
+  } else {
+    snapUnitPrice.value  = weightedAvgUnitPrice.value
+    snapStatistics.value = { ...statistics.value }
   }
-  return statistics.value;
+  snapUnit.value          = store.requestedUnit || 'шт'
+  snapJustification.value = justificationText.value
+}
+
+// totalNmts обновляется вместе с qty, но цена берётся из снэпшота
+const snapTotalNmts = computed(() => snapUnitPrice.value * store.requestedQty)
+
+// Кнопки появляются когда черновик отличается от уже применённых фильтров
+const activeFiltersCount = computed(() => {
+  const f = draftFilters.value;
+  const a = store.filters;
+  let count = 0;
+  if (f.region   !== (a.region   || '')) count++;
+  if (f.vatRate  !== (a.vatRate  || '')) count++;
+  if (f.dateFrom !== (a.dateFrom || '')) count++;
+  if (f.dateTo   !== (a.dateTo   || '')) count++;
+  if (draftUnit.value !== (store.requestedUnit || 'шт')) count++;
+  return count;
 });
 
-const activeFiltersCount = computed(
-  () => Object.values(store.filters).filter(Boolean).length
-);
-
 function resetFilters() {
-  store.filters = {
-    region: "",
-    dateFrom: "",
-    dateTo: "",
-    vatRate: "",
+  draftFilters.value = {
+    region:   store.userRegion || '',
+    dateFrom: '',
+    dateTo:   '',
+    vatRate:  '',
+    outliers: 'all',
   };
+  draftUnit.value = 'шт';
+  // Применяем сброс к store и пересчитываем
+  store.filters       = { ...draftFilters.value }
+  store.requestedUnit = 'шт';
+  recalculate();
 }
 
 function goToDocument() {
@@ -105,7 +145,17 @@ function goToDocument() {
 }
 
 async function recalculate() {
+  // Применяем черновик → store перед отправкой на сервер
+  store.filters       = { ...draftFilters.value }
+  store.requestedUnit = draftUnit.value
   await store.search(store.steQuery);
+  takeSnapshot();
+}
+
+function onSetNmc(total) {
+  const qty = store.requestedQty || 1
+  snapUnitPrice.value = total / qty
+  snapJustification.value = justificationText.value
 }
 
 /* ─── Пагинация ─── */
@@ -164,10 +214,13 @@ function goToPage(p) {
     <div class="results__filter-strip">
       <div class="container">
         <PriceFilter
-          v-model="store.filters"
+          v-model="draftFilters"
           :regions="store.availableRegions"
           :active-count="activeFiltersCount"
+          :unit="draftUnit"
+          @update:unit="draftUnit = $event"
           @reset="resetFilters"
+          @recalculate="recalculate"
         />
       </div>
     </div>
@@ -276,18 +329,16 @@ function goToPage(p) {
         <!-- Правая колонка — расчёт НМЦ -->
         <aside class="results__sidebar">
           <CalculationSummary
-            :unit-price="displayUnitPrice"
-            :total-nmts="displayTotalNmts"
-            :statistics="displayStatistics"
+            :unit-price="snapUnitPrice"
+            :total-nmts="snapTotalNmts"
+            :statistics="snapStatistics"
             :requested-qty="store.requestedQty"
-            :unit="store.requestedUnit"
-            :justification-text="justificationText"
+            :unit="snapUnit"
+            :justification-text="snapJustification"
             :doc-version="store.docVersion"
-            :is-recalculating="store.isLoading"
             @go-document="goToDocument"
-            @recalculate="recalculate"
             @update:requested-qty="store.requestedQty = $event"
-            @update:unit="store.requestedUnit = $event"
+            @set-nmc="onSetNmc"
           />
         </aside>
       </div>
@@ -304,8 +355,7 @@ function goToPage(p) {
 /* Шапка */
 .results__header-wrap {
   background: #fff;
-  border-bottom: 1px solid var(--color-gray-blue);
-  padding: var(--space-5) 0 var(--space-4);
+  padding: var(--space-3) 0 var(--space-2);
 }
 
 .results__header {
