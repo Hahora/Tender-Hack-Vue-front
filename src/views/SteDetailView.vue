@@ -57,6 +57,20 @@ onMounted(async () => {
         <div>
           <p class="sd__eyebrow">Справочник технических элементов</p>
           <h1 class="sd__title">{{ ste.name }}</h1>
+          <div class="sd__applied-filters">
+            <span v-if="store.filters.region || route.query.region" class="sd__af-tag">
+              <span class="sd__af-key">Регион:</span> {{ store.filters.region || route.query.region }}
+            </span>
+            <span v-if="store.filters.vatRate || route.query.vat" class="sd__af-tag">
+              <span class="sd__af-key">НДС:</span> {{ store.filters.vatRate || route.query.vat }}
+            </span>
+            <span v-if="store.filters.dateFrom || route.query.date_from" class="sd__af-tag">
+              <span class="sd__af-key">С:</span> {{ store.filters.dateFrom || route.query.date_from }}
+            </span>
+            <span v-if="store.filters.dateTo || route.query.date_to" class="sd__af-tag">
+              <span class="sd__af-key">По:</span> {{ store.filters.dateTo || route.query.date_to }}
+            </span>
+          </div>
         </div>
         <span class="sd__id-badge">{{ ste.ste_id }}</span>
       </div>
@@ -97,11 +111,11 @@ onMounted(async () => {
           name: 'contracts',
           params: { ste: ste.ste_id },
           query: {
-            q:         store.steQuery          || undefined,
-            region:    store.filters.region    || undefined,
-            date_from: store.filters.dateFrom  || undefined,
-            date_to:   store.filters.dateTo    || undefined,
-            vat:       store.filters.vatRate   || undefined,
+            q:         store.steQuery          || route.query.q          || undefined,
+            region:    store.filters.region    || route.query.region     || undefined,
+            date_from: store.filters.dateFrom  || route.query.date_from  || undefined,
+            date_to:   store.filters.dateTo    || route.query.date_to    || undefined,
+            vat:       store.filters.vatRate   || route.query.vat        || undefined,
           },
         })"
       >
@@ -324,5 +338,30 @@ onMounted(async () => {
 .sd__loading-sub {
   font-size: var(--font-size-sm);
   color: var(--color-pale-black);
+}
+
+.sd__applied-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: 4px;
+}
+
+.sd__af-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.sd__af-key {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-main-blue);
 }
 </style>

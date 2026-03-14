@@ -15,7 +15,17 @@ const props = defineProps({
 const isManualEntry = computed(() => props.procurement.id?.startsWith("MAN-"));
 
 function goToSteDetail() {
-  router.push({ name: "ste-detail", params: { id: props.procurement.steNumber } });
+  router.push({
+    name: "ste-detail",
+    params: { id: props.procurement.steNumber },
+    query: {
+      q:         store.steQuery          || undefined,
+      region:    store.filters.region    || undefined,
+      date_from: store.filters.dateFrom  || undefined,
+      date_to:   store.filters.dateTo    || undefined,
+      vat:       store.filters.vatRate   || undefined,
+    },
+  });
 }
 
 function goToContracts() {
@@ -23,11 +33,12 @@ function goToContracts() {
     name: "contracts",
     params: { ste: props.procurement.steNumber },
     query: {
-      q:         store.steQuery            || undefined,
-      region:    store.filters.region      || undefined,
-      date_from: store.filters.dateFrom    || undefined,
-      date_to:   store.filters.dateTo      || undefined,
-      vat:       store.filters.vatRate     || undefined,
+      q:             store.steQuery          || undefined,
+      region:        store.filters.region    || undefined,
+      date_from:     store.filters.dateFrom  || undefined,
+      date_to:       store.filters.dateTo    || undefined,
+      vat:           store.filters.vatRate   || undefined,
+      force_include: store.forceInclude.length ? store.forceInclude.join(',') : undefined,
     },
   });
 }

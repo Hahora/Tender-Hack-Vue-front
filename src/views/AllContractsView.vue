@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { usePriceStore } from "../stores/priceStore.js";
 import { formatPrice, formatDate } from "../composables/usePriceCalculation.js";
@@ -24,22 +24,40 @@ onMounted(async () => {
       outliers: 'all',
     }
     store.requestedUnit = route.query.unit ? String(route.query.unit) : 'шт'
+    // Сохраняем force_include ДО поиска — search() сбросит forceInclude и watch очистит URL
+    const savedForceInclude = route.query.force_include
     await store.search(q)
+    if (savedForceInclude) {
+      const ids = savedForceInclude.split(',').filter(Boolean)
+      if (ids.length) await store.restoreForceInclude(ids)
+    }
   }
   // Если q отсутствует в URL — добавляем со всеми фильтрами
   if (store.steQuery && !route.query.q) {
-    const f = store.filters
+    const f  = store.filters
+    const fi = store.forceInclude
     router.replace({ query: {
       ...route.query,
-      q:         store.steQuery,
-      region:    f.region   || undefined,
-      vat:       f.vatRate  || undefined,
-      date_from: f.dateFrom || undefined,
-      date_to:   f.dateTo   || undefined,
-      unit:      store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+      q:             store.steQuery,
+      region:        f.region   || undefined,
+      vat:           f.vatRate  || undefined,
+      date_from:     f.dateFrom || undefined,
+      date_to:       f.dateTo   || undefined,
+      unit:          store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+      force_include: fi.length ? fi.join(',') : undefined,
     }})
   }
 })
+
+// Синхронизируем force_include в URL (immediate — срабатывает и при навигации без reload)
+watch(() => [...store.forceInclude], (ids) => {
+  router.replace({
+    query: {
+      ...route.query,
+      force_include: ids.length ? ids.join(',') : undefined,
+    },
+  })
+}, { immediate: true })
 
 const initFilter = route.query.filter;
 const activeFilters = ref(initFilter ? new Set([initFilter]) : new Set());
@@ -72,33 +90,52 @@ const contracts = computed(() => {
   return [...map.values()].sort((a, b) => new Date(b.date) - new Date(a.date));
 });
 
+// ── Отображение статусов ──────────────────────────────────────────────────
+const STATUS_LABEL = {
+  used:           'Учтено',
+  outlier:        'Выброс IQR',
+  force_included: 'Добавлен вручную',
+}
+
+const STATUS_BADGE_CLS = {
+  used:           'ac__status-badge--green',
+  outlier:        'ac__status-badge--orange',
+  force_included: 'ac__status-badge--teal',
+}
+
+const ACTION_REASON = {
+  outlier:        'Выброс по IQR — не учитывается в расчёте НМЦК',
+  force_included: 'Добавлен вручную в расчёт НМЦК',
+}
+
+const ACTION_BTN_LABEL = {
+  outlier:        'Включить в расчёт',
+  force_included: 'Убрать из расчёта',
+}
+
+const CONFIRM_SUB = {
+  outlier:        'Выброс будет включён в расчёт. НМЦК пересчитается автоматически.',
+  force_included: 'Ручное включение будет отменено. НМЦК пересчитается автоматически.',
+}
+
 function contractStatus(c) {
-  const hasActive = c.items.some((p) => !p.isOutlier || p.manualInclude);
-  const hasOutlier = c.items.some((p) => p.isOutlier && !p.manualInclude);
-  if (hasOutlier && !hasActive) return "outlier";
-  if (hasOutlier && hasActive) return "mixed";
-  return "active";
+  return c.items[0]?.contractStatus || 'used'
 }
 
 const filtered = computed(() => {
   if (activeFilters.value.size === 0) return contracts.value;
   return contracts.value.filter((c) => {
     const s = contractStatus(c);
-    if (activeFilters.value.has("active") && (s === "active" || s === "mixed"))
-      return true;
-    if (
-      activeFilters.value.has("outlier") &&
-      (s === "outlier" || s === "mixed")
-    )
-      return true;
+    if (activeFilters.value.has('active')  && ['used', 'force_included'].includes(s)) return true;
+    if (activeFilters.value.has('outlier') && s === 'outlier') return true;
     return false;
   });
 });
 
 const counts = computed(() => ({
-  all: contracts.value.length,
-  active: contracts.value.filter((c) => contractStatus(c) !== "outlier").length,
-  outlier: contracts.value.filter((c) => contractStatus(c) !== "active").length,
+  all:     contracts.value.length,
+  active:  contracts.value.filter((c) => ['used', 'force_included'].includes(contractStatus(c))).length,
+  outlier: contracts.value.filter((c) => contractStatus(c) === 'outlier').length,
 }));
 
 function contractTotal(items) {
@@ -115,16 +152,7 @@ function doConfirm() {
   const c = confirmTarget.value
   if (!c) return
   confirmTarget.value = null
-  const allIncluded = c.items.every((p) => !p.isOutlier || p.manualInclude)
-  for (const p of c.items) {
-    if (p.isOutlier) {
-      if (allIncluded) {
-        if (p.manualInclude) store.toggleManualInclude(p.id)
-      } else {
-        if (!p.manualInclude) store.toggleManualInclude(p.id)
-      }
-    }
-  }
+  store.contractAction(c.contractNumber)
 }
 </script>
 
@@ -207,7 +235,10 @@ function doConfirm() {
         v-for="c in filtered"
         :key="c.contractNumber"
         class="ac__card"
-        :class="{ 'ac__card--outlier': contractStatus(c) !== 'active' }"
+        :class="{
+          'ac__card--outlier':        contractStatus(c) === 'outlier',
+          'ac__card--force-included': contractStatus(c) === 'force_included',
+        }"
         @click="
           router.push({
             name: 'contract-detail',
@@ -220,8 +251,9 @@ function doConfirm() {
         <div
           class="ac__card-accent"
           :class="{
-            'ac__card-accent--green': contractStatus(c) === 'active',
-            'ac__card-accent--orange': contractStatus(c) !== 'active',
+            'ac__card-accent--green':  contractStatus(c) === 'used',
+            'ac__card-accent--orange': contractStatus(c) === 'outlier',
+            'ac__card-accent--teal':   contractStatus(c) === 'force_included',
           }"
         />
 
@@ -231,22 +263,9 @@ function doConfirm() {
             <div class="ac__card-left">
               <div class="ac__card-meta">
                 <span class="ac__contract-num">{{ c.contractNumber }}</span>
-                <span
-                  class="ac__status-badge"
-                  :class="{
-                    'ac__status-badge--green': contractStatus(c) === 'active',
-                    'ac__status-badge--orange': contractStatus(c) === 'outlier',
-                    'ac__status-badge--teal': contractStatus(c) === 'mixed',
-                  }"
-                >
+                <span class="ac__status-badge" :class="STATUS_BADGE_CLS[contractStatus(c)]">
                   <span class="ac__status-dot" />
-                  {{
-                    contractStatus(c) === "active"
-                      ? "Учтено"
-                      : contractStatus(c) === "outlier"
-                      ? "Выброс IQR"
-                      : "Частично учтено"
-                  }}
+                  {{ STATUS_LABEL[contractStatus(c)] }}
                 </span>
               </div>
               <div class="ac__date">
@@ -289,11 +308,12 @@ function doConfirm() {
                       name: 'contracts',
                       params: { ste: c.steNumber },
                       query: {
-                        q:         store.steQuery   || undefined,
-                        region:    store.filters.region   || undefined,
-                        date_from: store.filters.dateFrom || undefined,
-                        date_to:   store.filters.dateTo   || undefined,
-                        vat:       store.filters.vatRate  || undefined,
+                        q:             store.steQuery          || undefined,
+                        region:        store.filters.region    || undefined,
+                        date_from:     store.filters.dateFrom  || undefined,
+                        date_to:       store.filters.dateTo    || undefined,
+                        vat:           store.filters.vatRate   || undefined,
+                        force_include: store.forceInclude.length ? store.forceInclude.join(',') : undefined,
                       },
                     })"
                   >
@@ -324,66 +344,38 @@ function doConfirm() {
             </div>
           </div>
 
-          <!-- Выброс: причина + кнопка -->
+          <!-- Статус-бар: только для выбросов -->
           <div
-            v-if="contractStatus(c) !== 'active'"
-            class="ac__outlier-bar"
+            v-if="contractStatus(c) !== 'used'"
+            class="ac__action-bar"
+            :class="`ac__action-bar--${contractStatus(c)}`"
             @click.stop
           >
-            <div class="ac__outlier-reason">
-              <svg width="12" height="11" viewBox="0 0 13 12" fill="none">
-                <path
-                  d="M6.5.5L12.5 11H.5L6.5.5z"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M6.5 4.5v3M6.5 9v.3"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  stroke-linecap="round"
-                />
+            <div class="ac__action-reason">
+              <svg v-if="contractStatus(c) === 'outlier'" width="12" height="11" viewBox="0 0 13 12" fill="none">
+                <path d="M6.5.5L12.5 11H.5L6.5.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M6.5 4.5v3M6.5 9v.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
-              Цена выходит за пределы IQR — не учитывается в расчёте НМЦК
+              <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M4 6l1.5 1.5L8.5 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              {{ ACTION_REASON[contractStatus(c)] }}
             </div>
             <button
               class="ac__include-btn"
               :class="{
-                'ac__include-btn--active': c.items.some(
-                  (p) => p.isOutlier && p.manualInclude
-                ),
+                'ac__include-btn--add':    contractStatus(c) === 'outlier',
+                'ac__include-btn--remove': contractStatus(c) === 'force_included',
               }"
               @click.stop="toggleContractInclude(c)"
             >
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                <circle
-                  cx="5.5"
-                  cy="5.5"
-                  r="4.5"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                />
-                <path
-                  v-if="!c.items.some((p) => p.isOutlier && p.manualInclude)"
-                  d="M3 5.5l2 2 3-3.5"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  stroke-linecap="round"
-                />
-                <path
-                  v-else
-                  d="M3.5 3.5l4 4M7.5 3.5l-4 4"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  stroke-linecap="round"
-                />
+                <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" stroke-width="1.2"/>
+                <path v-if="contractStatus(c) === 'outlier'" d="M3 5.5l2 2 3-3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path v-else d="M3.5 3.5l4 4M7.5 3.5l-4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
-              {{
-                c.items.some((p) => p.isOutlier && p.manualInclude)
-                  ? "Убрать из расчёта"
-                  : "Включить в расчёт"
-              }}
+              {{ ACTION_BTN_LABEL[contractStatus(c)] }}
             </button>
           </div>
         </div>
@@ -417,11 +409,7 @@ function doConfirm() {
             </div>
             <div class="ac__dialog-body">
               <p class="ac__dialog-title">Будет выполнен пересчёт НМЦК</p>
-              <p class="ac__dialog-sub">
-                {{ confirmTarget.items.some(p => p.isOutlier && p.manualInclude)
-                  ? 'Выброс будет исключён из расчёта. НМЦК пересчитается автоматически.'
-                  : 'Выброс будет включён в расчёт. НМЦК пересчитается автоматически.' }}
-              </p>
+              <p class="ac__dialog-sub">{{ CONFIRM_SUB[contractStatus(confirmTarget)] }}</p>
             </div>
             <div class="ac__dialog-actions">
               <button class="ac__dialog-cancel" @click="confirmTarget = null">Отмена</button>
@@ -637,20 +625,18 @@ function doConfirm() {
 .ac__card:hover {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
-.ac__card--outlier {
-  background: #fffcf5;
-}
+.ac__card--outlier        { background: #fffcf5; }
+.ac__card--force-included { background: #f0faf6; }
+.ac__card--force-excluded { background: #fff5f5; }
 
 .ac__card-accent {
   width: 4px;
   flex-shrink: 0;
 }
-.ac__card-accent--green {
-  background: #0d9b68;
-}
-.ac__card-accent--orange {
-  background: #f9c56a;
-}
+.ac__card-accent--green  { background: #0d9b68; }
+.ac__card-accent--orange { background: #f9c56a; }
+.ac__card-accent--teal   { background: #167c85; }
+.ac__card-accent--red    { background: #d94f4f; }
 
 .ac__card-inner {
   flex: 1;
@@ -712,18 +698,10 @@ function doConfirm() {
   padding: 2px 8px;
   border-radius: var(--radius-full);
 }
-.ac__status-badge--green {
-  color: #0d9b68;
-  background: #e6f5ee;
-}
-.ac__status-badge--orange {
-  color: #c27000;
-  background: #fff6e4;
-}
-.ac__status-badge--teal {
-  color: #167c85;
-  background: #e4f4f5;
-}
+.ac__status-badge--green  { color: #0d9b68; background: #e6f5ee; }
+.ac__status-badge--orange { color: #c27000; background: #fff6e4; }
+.ac__status-badge--teal   { color: #167c85; background: #e4f4f5; }
+.ac__status-badge--red    { color: #c0392b; background: #fdecea; }
 
 .ac__status-dot {
   width: 6px;
@@ -871,26 +849,32 @@ function doConfirm() {
   white-space: nowrap;
 }
 
-/* Строка выброса */
-.ac__outlier-bar {
+/* Статус-бар (отображается для всех статусов) */
+.ac__action-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: #fff8ed;
   border-radius: var(--radius-sm);
   flex-wrap: wrap;
 }
+.ac__action-bar--used           { background: #eef4fb; }
+.ac__action-bar--outlier        { background: #fff8ed; }
+.ac__action-bar--force_included { background: #e8f7f0; }
+.ac__action-bar--force_excluded { background: #fdecea; }
 
-.ac__outlier-reason {
+.ac__action-reason {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--font-size-xs);
-  color: #7a4400;
   line-height: 1.4;
 }
+.ac__action-bar--used           .ac__action-reason { color: #2a5298; }
+.ac__action-bar--outlier        .ac__action-reason { color: #7a4400; }
+.ac__action-bar--force_included .ac__action-reason { color: #0d6b52; }
+.ac__action-bar--force_excluded .ac__action-reason { color: #a03030; }
 
 .ac__include-btn {
   display: inline-flex;
@@ -899,30 +883,18 @@ function doConfirm() {
   font-family: var(--font-family);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  color: #c27000;
-  background: #fff0cc;
-  border: 1px solid #f5c96a;
   border-radius: var(--radius-base);
   padding: 4px 10px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--transition-fast),
-    border-color var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
   flex-shrink: 0;
+  border: 1px solid;
 }
-.ac__include-btn:hover {
-  background: #ffe5a0;
-  border-color: #e6a800;
-}
-.ac__include-btn--active {
-  color: #0d9b68;
-  background: #e6f5ee;
-  border-color: #0d9b68;
-}
-.ac__include-btn--active:hover {
-  background: #cceedd;
-  border-color: #0a7a52;
-}
+.ac__include-btn--add    { color: #0d6b52; background: #d4f5e4; border-color: #0d9b68; }
+.ac__include-btn--add:hover { background: #b8edce; border-color: #0a7a52; }
+.ac__include-btn--remove { color: #a03030; background: #fce8e8; border-color: #d94f4f; }
+.ac__include-btn--remove:hover { background: #f8d0d0; border-color: #b03030; }
 
 /* Диалог подтверждения */
 .ac__overlay {

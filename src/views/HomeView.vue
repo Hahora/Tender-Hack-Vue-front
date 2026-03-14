@@ -51,9 +51,10 @@ const STATS = [
           </h1>
 
           <p class="home__hero-subtitle">
-            Автоматизированный расчёт НМЦК на основе данных ЕИС. Фильтрация
-            выбросов, ручная корректировка и формирование обосновывающего
-            документа по требованиям Приказа МЭР № 567.
+            Введите наименование товара — система найдёт актуальные контракты
+            из ЕИС, автоматически исключит выбросы по методу IQR и рассчитает
+            НМЦК. Вы видите каждый контракт, его статус и можете управлять
+            составом расчёта вручную.
           </p>
 
           <!-- Поиск -->
@@ -102,25 +103,16 @@ const STATS = [
               <div class="home__preview-divider" />
               <div class="home__preview-stats">
                 <div class="home__preview-stat">
-                  <span
-                    class="home__preview-stat-val home__preview-stat-val--green"
-                    >12</span
-                  >
+                  <span class="home__preview-stat-val home__preview-stat-val--green">14</span>
+                  <span class="home__preview-stat-label">всего</span>
+                </div>
+                <div class="home__preview-stat">
+                  <span class="home__preview-stat-val home__preview-stat-val--green">12</span>
                   <span class="home__preview-stat-label">учтено</span>
                 </div>
                 <div class="home__preview-stat">
-                  <span
-                    class="home__preview-stat-val home__preview-stat-val--orange"
-                    >2</span
-                  >
-                  <span class="home__preview-stat-label">выброса</span>
-                </div>
-                <div class="home__preview-stat">
-                  <span
-                    class="home__preview-stat-val home__preview-stat-val--gray"
-                    >1</span
-                  >
-                  <span class="home__preview-stat-label">исключено</span>
+                  <span class="home__preview-stat-val home__preview-stat-val--orange">2</span>
+                  <span class="home__preview-stat-label">выброса IQR</span>
                 </div>
               </div>
               <div class="home__preview-divider" />
@@ -185,104 +177,62 @@ const STATS = [
           <div class="home__step">
             <div class="home__step-icon home__step-icon--blue">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <circle
-                  cx="9"
-                  cy="9"
-                  r="6.5"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                />
-                <path
-                  d="M14 14l5 5"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
+                <circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M14 14l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
               </svg>
             </div>
             <div class="home__step-num">01</div>
-            <h3 class="home__step-title">Введите СТЕ</h3>
+            <h3 class="home__step-title">Введите запрос</h3>
             <p class="home__step-desc">
-              Укажите наименование товара, работы или услуги из справочника ЕИС
+              Укажите наименование товара, работы или услуги —
+              система найдёт сопоставимые контракты в ЕИС
             </p>
           </div>
 
           <div class="home__step">
             <div class="home__step-icon home__step-icon--green">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path
-                  d="M3 15l4-4 3 3 4-5 4 3"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <rect
-                  x="1"
-                  y="1"
-                  width="20"
-                  height="20"
-                  rx="3"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                />
+                <path d="M3 15l4-4 3 3 4-5 4 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="1" y="1" width="20" height="20" rx="3" stroke="currentColor" stroke-width="1.6"/>
               </svg>
             </div>
             <div class="home__step-num">02</div>
-            <h3 class="home__step-title">Получите список цен</h3>
+            <h3 class="home__step-title">Получите расчёт НМЦК</h3>
             <p class="home__step-desc">
-              Система найдёт сопоставимые закупки и автоматически исключит
-              статистические выбросы методом IQR
+              Автоматическое исключение выбросов по методу IQR,
+              расчёт средневзвешенной цены, статус каждого контракта —
+              <em>Учтено</em> или <em>Выброс IQR</em>
             </p>
           </div>
 
           <div class="home__step">
             <div class="home__step-icon home__step-icon--orange">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path
-                  d="M10 3H3v16h16v-7"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M13 2l7 7-8 8-4 1 1-4 8-8z"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linejoin="round"
-                />
+                <circle cx="11" cy="11" r="4" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M11 3v2M11 17v2M3 11h2M17 11h2M5.6 5.6l1.4 1.4M14.6 14.6l1.4 1.4M5.6 16.4l1.4-1.4M14.6 7.4l1.4-1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
               </svg>
             </div>
             <div class="home__step-num">03</div>
-            <h3 class="home__step-title">Скорректируйте вручную</h3>
+            <h3 class="home__step-title">Управляйте выбросами</h3>
             <p class="home__step-desc">
-              Исключите нерелевантные позиции, добавьте цены из прайс-листов
-              поставщиков
+              Изучите каждый контракт и его статус. Выброс IQR можно
+              включить в расчёт — НМЦК пересчитается автоматически.
+              Состав расчёта сохраняется в ссылке
             </p>
           </div>
 
           <div class="home__step">
             <div class="home__step-icon home__step-icon--sea">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path
-                  d="M13 2H5a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M13 2v6h6M7 12h8M7 16h5"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                />
+                <path d="M13 2H5a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M13 2v6h6M7 12h8M7 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
               </svg>
             </div>
             <div class="home__step-num">04</div>
-            <h3 class="home__step-title">Сохраните документ</h3>
+            <h3 class="home__step-title">Сформируйте документ</h3>
             <p class="home__step-desc">
-              Получите готовое обоснование НМЦК по Приказу МЭР № 567 с расчётом
-              и ссылками на источники
+              Готовое обоснование НМЦК по Приказу МЭР № 567
+              с расчётом, источниками и подписью
             </p>
           </div>
         </div>

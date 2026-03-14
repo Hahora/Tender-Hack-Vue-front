@@ -71,6 +71,12 @@ const routes = [
     component: () => import('../views/HistoryView.vue'),
     meta: { title: 'История закупок' },
   },
+  {
+    path: '/team',
+    name: 'team',
+    component: () => import('../views/TeamView.vue'),
+    meta: { title: 'Команда', public: true },
+  },
   // Редирект с любого несуществующего пути на главную
   {
     path: '/:pathMatch(.*)*',
@@ -87,7 +93,7 @@ const router = createRouter({
 // Защита маршрутов: не авторизован — на /login
 router.beforeEach((to) => {
   const isAuth = !!localStorage.getItem('access_token')
-  if (!isAuth && to.name !== 'login') {
+  if (!isAuth && to.name !== 'login' && !to.meta.public) {
     return { name: 'login' }
   }
   if (isAuth && to.name === 'login') {

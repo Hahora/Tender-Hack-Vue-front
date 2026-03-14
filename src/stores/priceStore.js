@@ -92,6 +92,46 @@ export const usePriceStore = defineStore('price', () => {
     }
   }
 
+  /* ─── Сохранение/восстановление force-массивов через sessionStorage ─── */
+  function _forceKey(q) {
+    return `nmck_force_${q}`
+  }
+
+  function _saveForce() {
+    if (!steQuery.value) return
+    sessionStorage.setItem(_forceKey(steQuery.value), JSON.stringify({
+      include: forceInclude.value,
+      exclude: forceExclude.value,
+    }))
+  }
+
+  function _clearForce(q) {
+    sessionStorage.removeItem(_forceKey(q))
+  }
+
+  // Возвращает true если были восстановлены данные (нужен пересчёт)
+  function _restoreForce() {
+    if (!steQuery.value) return false
+    try {
+      const raw = sessionStorage.getItem(_forceKey(steQuery.value))
+      if (!raw) return false
+      const { include, exclude } = JSON.parse(raw)
+      if (!include?.length && !exclude?.length) return false
+      forceInclude.value = include || []
+      forceExclude.value = exclude || []
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /* ─── Восстановить force_include из URL (вызывается из view-компонентов) ─── */
+  async function restoreForceInclude(ids) {
+    if (!ids || ids.length === 0) return
+    forceInclude.value = ids
+    await recalculate()
+  }
+
   /* ─── Пересчитать НМЦК (можно вызывать после force_include/force_exclude) ─── */
   async function recalculate() {
     if (rawContracts.value.length === 0) return
@@ -119,6 +159,8 @@ export const usePriceStore = defineStore('price', () => {
     const trimmed = query?.trim()
     if (!trimmed) return
 
+    // Сбрасываем старый force-стейт для предыдущего запроса
+    _clearForce(steQuery.value)
     steQuery.value    = trimmed
     isLoading.value   = true
     error.value       = null
@@ -194,6 +236,26 @@ export const usePriceStore = defineStore('price', () => {
     } finally {
       isLoading.value = false
     }
+  }
+
+  /* ─── Универсальное действие по статусу контракта ─── */
+  function contractAction(contractNumber) {
+    const items = procurements.value.filter(p => p.id === contractNumber)
+    if (items.length === 0) return
+    const status = items[0].contractStatus || 'used'
+
+    if (status === 'outlier') {
+      // Выброс → добавить вручную в расчёт
+      if (!forceInclude.value.includes(contractNumber)) forceInclude.value.push(contractNumber)
+      items.forEach(p => { p.contractStatus = 'force_included'; p.manualInclude = true; p.isOutlier = false })
+    } else if (status === 'force_included') {
+      // Убрать ручное включение → вернуть в выбросы
+      const idx = forceInclude.value.indexOf(contractNumber)
+      if (idx >= 0) forceInclude.value.splice(idx, 1)
+      items.forEach(p => { p.contractStatus = 'outlier'; p.manualInclude = false; p.isOutlier = true })
+    }
+    _saveForce()
+    recalculate()
   }
 
   /* ─── Исключить контракт из расчёта (force_exclude) ─── */
@@ -281,6 +343,7 @@ export const usePriceStore = defineStore('price', () => {
   function resetManual() {
     forceInclude.value = []
     forceExclude.value = []
+    _clearForce(steQuery.value)
     procurements.value = procurements.value
       .filter(p => !p.id.startsWith('MAN-'))
       .map(p => ({ ...p, isExcluded: false, manualPrice: false, manualInclude: false }))
@@ -302,8 +365,8 @@ export const usePriceStore = defineStore('price', () => {
     docVersion,
     availableRegions,
     withAuth,
-    search, recalculate,
-    toggleExclude, toggleManualInclude, setManualPrice, addManualEntry, resetManual,
+    search, recalculate, restoreForceInclude,
+    contractAction, toggleExclude, toggleManualInclude, setManualPrice, addManualEntry, resetManual,
     incrementVersion,
   }
 })

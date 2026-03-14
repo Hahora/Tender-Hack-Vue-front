@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { usePriceStore } from "../stores/priceStore.js";
 import { formatPrice, formatDate } from "../composables/usePriceCalculation.js";
@@ -8,85 +8,121 @@ const router = useRouter();
 const route  = useRoute();
 const store  = usePriceStore();
 
-// При перезагрузке стор пустой — восстанавливаем поиск из URL-параметров
 onMounted(async () => {
   if (!store.hasSearched && route.query.q) {
-    store.filters.region   = route.query.region   || ''
+    store.filters.region   = route.query.region    || ''
     store.filters.dateFrom = route.query.date_from || ''
     store.filters.dateTo   = route.query.date_to   || ''
     store.filters.vatRate  = route.query.vat        || ''
+    // Сохраняем force_include ДО поиска — search() сбросит forceInclude и watch очистит URL
+    const savedForceInclude = route.query.force_include
     await store.search(route.query.q)
+    if (savedForceInclude) {
+      const ids = savedForceInclude.split(',').filter(Boolean)
+      if (ids.length) await store.restoreForceInclude(ids)
+    }
   } else if (!store.hasSearched) {
     router.replace('/')
   }
 })
 
-// СТЕ из URL-параметра
-const steParam = route.params.ste;
+// Синхронизируем force_include в URL (immediate — срабатывает и при навигации без reload)
+watch(() => [...store.forceInclude], (ids) => {
+  router.replace({
+    query: {
+      ...route.query,
+      force_include: ids.length ? ids.join(',') : undefined,
+    },
+  })
+}, { immediate: true })
 
-// Мультивыбор: Set из 'active' | 'outlier'. Пустой = показать все
-const initFilter = route.query.filter;
-const activeFilters = ref(
-  initFilter ? new Set([initFilter]) : new Set()
-);
+const steParam = route.params.ste
+
+const initFilter = route.query.filter
+const activeFilters = ref(initFilter ? new Set([initFilter]) : new Set())
 
 function toggleFilter(key) {
-  const s = new Set(activeFilters.value);
-  if (s.has(key)) s.delete(key); else s.add(key);
-  activeFilters.value = s;
+  const s = new Set(activeFilters.value)
+  if (s.has(key)) s.delete(key); else s.add(key)
+  activeFilters.value = s
 }
 
-// Группируем закупки по номеру контракта, фильтруем по СТЕ из URL
+// ── Отображение статусов ──────────────────────────────────────────────────
+const STATUS_LABEL = {
+  used:           'Учтено',
+  outlier:        'Выброс IQR',
+  force_included: 'Добавлен вручную',
+}
+
+const STATUS_BADGE_CLS = {
+  used:           'cl__status-badge--green',
+  outlier:        'cl__status-badge--orange',
+  force_included: 'cl__status-badge--teal',
+}
+
+const ACTION_REASON = {
+  outlier:        'Выброс по IQR — не учитывается в расчёте НМЦК',
+  force_included: 'Добавлен вручную в расчёт НМЦК',
+}
+
+const ACTION_BTN_LABEL = {
+  outlier:        'Включить в расчёт',
+  force_included: 'Убрать из расчёта',
+}
+
+const CONFIRM_SUB = {
+  outlier:        'Выброс будет включён в расчёт. НМЦК пересчитается автоматически.',
+  force_included: 'Ручное включение будет отменено. НМЦК пересчитается автоматически.',
+}
+
+// ── Данные ────────────────────────────────────────────────────────────────
 const contracts = computed(() => {
-  const map = new Map();
+  const map = new Map()
   for (const p of store.procurements) {
-    if (steParam && p.steNumber !== steParam) continue;
+    if (steParam && p.steNumber !== steParam) continue
     if (!map.has(p.contractNumber)) {
       map.set(p.contractNumber, {
         contractNumber: p.contractNumber,
-        steNumber: p.steNumber,
-        supplier: p.supplier,
-        customer: p.customer,
-        region: p.supplierRegion || p.region,
-        date: p.date,
-        vatRate: p.vatRate,
-        items: [],
-      });
+        steNumber:      p.steNumber,
+        supplier:       p.supplier,
+        customer:       p.customer,
+        region:         p.supplierRegion || p.region,
+        date:           p.date,
+        vatRate:        p.vatRate,
+        items:          [],
+      })
     }
-    map.get(p.contractNumber).items.push(p);
+    map.get(p.contractNumber).items.push(p)
   }
-  return [...map.values()].sort((a, b) => new Date(b.date) - new Date(a.date));
-});
+  return [...map.values()].sort((a, b) => new Date(b.date) - new Date(a.date))
+})
 
-// Статус контракта
+// Статус берём напрямую из поля contractStatus (проставляется applyNmck)
 function contractStatus(c) {
-  const hasActive  = c.items.some(p => !p.isOutlier || p.manualInclude);
-  const hasOutlier = c.items.some(p => p.isOutlier && !p.manualInclude);
-  if (hasOutlier && !hasActive) return "outlier";
-  if (hasOutlier && hasActive)  return "mixed";
-  return "active";
+  return c.items[0]?.contractStatus || 'used'
 }
 
 const filtered = computed(() => {
-  if (activeFilters.value.size === 0) return contracts.value;
+  if (activeFilters.value.size === 0) return contracts.value
   return contracts.value.filter(c => {
-    const s = contractStatus(c);
-    if (activeFilters.value.has("active")  && (s === "active" || s === "mixed"))  return true;
-    if (activeFilters.value.has("outlier") && (s === "outlier" || s === "mixed")) return true;
-    return false;
-  });
-});
+    const s = contractStatus(c)
+    if (activeFilters.value.has('active')  && ['used', 'force_included'].includes(s)) return true
+    if (activeFilters.value.has('outlier') && s === 'outlier') return true
+    return false
+  })
+})
 
 const counts = computed(() => ({
   all:     contracts.value.length,
-  active:  contracts.value.filter(c => contractStatus(c) !== "outlier").length,
-  outlier: contracts.value.filter(c => contractStatus(c) !== "active").length,
-}));
+  active:  contracts.value.filter(c => ['used', 'force_included'].includes(contractStatus(c))).length,
+  outlier: contracts.value.filter(c => contractStatus(c) === 'outlier').length,
+}))
 
 function contractTotal(items) {
-  return items.reduce((sum, p) => sum + p.totalPrice, 0);
+  return items.reduce((sum, p) => sum + p.totalPrice, 0)
 }
 
+// ── Диалог подтверждения ──────────────────────────────────────────────────
 const confirmTarget = ref(null)
 
 function toggleContractInclude(c) {
@@ -97,16 +133,7 @@ function doConfirm() {
   const c = confirmTarget.value
   if (!c) return
   confirmTarget.value = null
-  const allIncluded = c.items.every(p => !p.isOutlier || p.manualInclude)
-  for (const p of c.items) {
-    if (p.isOutlier) {
-      if (allIncluded) {
-        if (p.manualInclude) store.toggleManualInclude(p.id)
-      } else {
-        if (!p.manualInclude) store.toggleManualInclude(p.id)
-      }
-    }
-  }
+  store.contractAction(c.contractNumber)
 }
 </script>
 
@@ -129,7 +156,13 @@ function doConfirm() {
             &nbsp;·&nbsp;
             <button
               class="cl__ste-link"
-              @click="router.push({ name: 'ste-detail', params: { id: steParam } })"
+              @click="router.push({ name: 'ste-detail', params: { id: steParam }, query: {
+                q:         store.steQuery          || route.query.q          || undefined,
+                region:    store.filters.region    || route.query.region     || undefined,
+                date_from: store.filters.dateFrom  || route.query.date_from  || undefined,
+                date_to:   store.filters.dateTo    || route.query.date_to    || undefined,
+                vat:       store.filters.vatRate   || route.query.vat        || undefined,
+              } })"
             >{{ steParam }}</button>
           </template>
         </p>
@@ -190,14 +223,16 @@ function doConfirm() {
         :key="c.contractNumber"
         class="cl__card"
         :class="{
-          'cl__card--outlier': contractStatus(c) !== 'active',
+          'cl__card--outlier':        contractStatus(c) === 'outlier',
+          'cl__card--force-included': contractStatus(c) === 'force_included',
         }"
         @click="router.push({ name: 'contract-detail', params: { number: c.contractNumber }, query: { steId: c.steNumber } })"
       >
         <!-- Акцентная полоса -->
         <div class="cl__card-accent" :class="{
-          'cl__card-accent--green':  contractStatus(c) === 'active',
-          'cl__card-accent--orange': contractStatus(c) !== 'active',
+          'cl__card-accent--green':  contractStatus(c) === 'used',
+          'cl__card-accent--orange': contractStatus(c) === 'outlier',
+          'cl__card-accent--teal':   contractStatus(c) === 'force_included',
         }" />
 
         <div class="cl__card-inner">
@@ -209,16 +244,9 @@ function doConfirm() {
             <div class="cl__card-left">
               <div class="cl__card-meta">
                 <span class="cl__contract-num">{{ c.contractNumber }}</span>
-                <span
-                  class="cl__status-badge"
-                  :class="{
-                    'cl__status-badge--green':  contractStatus(c) === 'active',
-                    'cl__status-badge--orange': contractStatus(c) === 'outlier',
-                    'cl__status-badge--teal':   contractStatus(c) === 'mixed',
-                  }"
-                >
+                <span class="cl__status-badge" :class="STATUS_BADGE_CLS[contractStatus(c)]">
                   <span class="cl__status-dot" />
-                  {{ contractStatus(c) === 'active' ? 'Учтено' : contractStatus(c) === 'outlier' ? 'Выброс IQR' : 'Частично учтено' }}
+                  {{ STATUS_LABEL[contractStatus(c)] }}
                 </span>
               </div>
               <div class="cl__date">
@@ -263,26 +291,38 @@ function doConfirm() {
             </div>
           </div>
 
-          <!-- Выброс: причина + кнопка -->
-          <div v-if="contractStatus(c) !== 'active'" class="cl__outlier-bar" @click.stop>
-            <div class="cl__outlier-reason">
-              <svg width="12" height="11" viewBox="0 0 13 12" fill="none">
+          <!-- Статус-бар: только для выбросов -->
+          <div
+            v-if="contractStatus(c) !== 'used'"
+            class="cl__action-bar"
+            :class="`cl__action-bar--${contractStatus(c)}`"
+            @click.stop
+          >
+            <div class="cl__action-reason">
+              <svg v-if="contractStatus(c) === 'outlier'" width="12" height="11" viewBox="0 0 13 12" fill="none">
                 <path d="M6.5.5L12.5 11H.5L6.5.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
                 <path d="M6.5 4.5v3M6.5 9v.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
-              Цена выходит за пределы IQR — не учитывается в расчёте НМЦК
+              <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M4 6l1.5 1.5L8.5 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              {{ ACTION_REASON[contractStatus(c)] }}
             </div>
             <button
               class="cl__include-btn"
-              :class="{ 'cl__include-btn--active': c.items.some(p => p.isOutlier && p.manualInclude) }"
+              :class="{
+                'cl__include-btn--add':    contractStatus(c) === 'outlier',
+                'cl__include-btn--remove': contractStatus(c) === 'force_included',
+              }"
               @click.stop="toggleContractInclude(c)"
             >
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                 <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" stroke-width="1.2"/>
-                <path v-if="!c.items.some(p => p.isOutlier && p.manualInclude)" d="M3 5.5l2 2 3-3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path v-if="contractStatus(c) === 'outlier'" d="M3 5.5l2 2 3-3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
                 <path v-else d="M3.5 3.5l4 4M7.5 3.5l-4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
-              {{ c.items.some(p => p.isOutlier && p.manualInclude) ? 'Убрать из расчёта' : 'Включить в расчёт' }}
+              {{ ACTION_BTN_LABEL[contractStatus(c)] }}
             </button>
           </div>
 
@@ -311,11 +351,7 @@ function doConfirm() {
             </div>
             <div class="cl__dialog-body">
               <p class="cl__dialog-title">Будет выполнен пересчёт НМЦК</p>
-              <p class="cl__dialog-sub">
-                {{ confirmTarget.items.some(p => p.isOutlier && p.manualInclude)
-                  ? 'Выброс будет исключён из расчёта. НМЦК пересчитается автоматически.'
-                  : 'Выброс будет включён в расчёт. НМЦК пересчитается автоматически.' }}
-              </p>
+              <p class="cl__dialog-sub">{{ CONFIRM_SUB[contractStatus(confirmTarget)] }}</p>
             </div>
             <div class="cl__dialog-actions">
               <button class="cl__dialog-cancel" @click="confirmTarget = null">Отмена</button>
@@ -503,7 +539,9 @@ function doConfirm() {
   transition: box-shadow var(--transition-fast);
 }
 .cl__card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-.cl__card--outlier { background: #fffcf5; }
+.cl__card--outlier        { background: #fffcf5; }
+.cl__card--force-included { background: #f0faf6; }
+.cl__card--force-excluded { background: #fff5f5; }
 
 .cl__card-accent {
   width: 4px;
@@ -511,6 +549,8 @@ function doConfirm() {
 }
 .cl__card-accent--green  { background: #0d9b68; }
 .cl__card-accent--orange { background: #f9c56a; }
+.cl__card-accent--teal   { background: #167c85; }
+.cl__card-accent--red    { background: #d94f4f; }
 
 .cl__card-inner {
   flex: 1;
@@ -574,6 +614,7 @@ function doConfirm() {
 .cl__status-badge--green  { color: #0d9b68; background: #e6f5ee; }
 .cl__status-badge--orange { color: #c27000; background: #fff6e4; }
 .cl__status-badge--teal   { color: #167c85; background: #e4f4f5; }
+.cl__status-badge--red    { color: #c0392b; background: #fdecea; }
 
 .cl__status-dot {
   width: 6px;
@@ -702,28 +743,34 @@ function doConfirm() {
   white-space: nowrap;
 }
 
-/* Строка выброса */
-.cl__outlier-bar {
+/* Статус-бар (отображается для всех статусов) */
+.cl__action-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: #fff8ed;
   border-radius: var(--radius-sm);
   flex-wrap: wrap;
 }
+.cl__action-bar--used           { background: #eef4fb; }
+.cl__action-bar--outlier        { background: #fff8ed; }
+.cl__action-bar--force_included { background: #e8f7f0; }
+.cl__action-bar--force_excluded { background: #fdecea; }
 
-.cl__outlier-reason {
+.cl__action-reason {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--font-size-xs);
-  color: #7a4400;
   line-height: 1.4;
 }
+.cl__action-bar--used           .cl__action-reason { color: #2a5298; }
+.cl__action-bar--outlier        .cl__action-reason { color: #7a4400; }
+.cl__action-bar--force_included .cl__action-reason { color: #0d6b52; }
+.cl__action-bar--force_excluded .cl__action-reason { color: #a03030; }
 
-/* Кнопка включить/убрать */
+/* Кнопка действия */
 .cl__include-btn {
   display: inline-flex;
   align-items: center;
@@ -731,19 +778,20 @@ function doConfirm() {
   font-family: var(--font-family);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  color: #c27000;
-  background: #fff0cc;
-  border: 1px solid #f5c96a;
   border-radius: var(--radius-base);
   padding: 4px 10px;
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--transition-fast), border-color var(--transition-fast);
   flex-shrink: 0;
+  border: 1px solid;
 }
-.cl__include-btn:hover { background: #ffe5a0; border-color: #e6a800; }
-.cl__include-btn--active { color: #0d9b68; background: #e6f5ee; border-color: #0d9b68; }
-.cl__include-btn--active:hover { background: #cceedd; border-color: #0a7a52; }
+/* Зелёная (добавить в расчёт): outlier + force_excluded */
+.cl__include-btn--add    { color: #0d6b52; background: #d4f5e4; border-color: #0d9b68; }
+.cl__include-btn--add:hover { background: #b8edce; border-color: #0a7a52; }
+/* Красная (убрать из расчёта): used + force_included */
+.cl__include-btn--remove { color: #a03030; background: #fce8e8; border-color: #d94f4f; }
+.cl__include-btn--remove:hover { background: #f8d0d0; border-color: #b03030; }
 
 /* Диалог подтверждения */
 .cl__overlay {

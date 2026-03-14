@@ -41,7 +41,13 @@ onMounted(async () => {
     store.requestedUnit     = restoredUnit
 
     if (!store.hasSearched || store.steQuery !== q) {
+      // Сохраняем force_include ДО поиска — search() очистит его
+      const savedForceInclude = route.query.force_include
       await store.search(q);
+      if (savedForceInclude) {
+        const ids = savedForceInclude.split(',').filter(Boolean)
+        if (ids.length) await store.restoreForceInclude(ids)
+      }
     }
     takeSnapshot();
   } else if (!store.hasSearched) {
@@ -70,6 +76,14 @@ function syncUrl() {
 
 watch(() => store.filters, syncUrl, { deep: true })
 watch(() => store.requestedUnit, syncUrl)
+watch(() => [...store.forceInclude], (ids) => {
+  router.replace({
+    query: {
+      ...route.query,
+      force_include: ids.length ? ids.join(',') : undefined,
+    },
+  })
+}, { immediate: true })
 
 const {
   processedProcurements,
