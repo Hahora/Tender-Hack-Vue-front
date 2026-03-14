@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -12,29 +12,103 @@ const emit = defineEmits(['update:modelValue', 'reset'])
 function update(key, val) {
   emit('update:modelValue', { ...props.modelValue, [key]: val })
 }
+
+/* ─── Кастомный дроп для региона ─── */
+const showRegionDrop = ref(false)
+const regionSearch   = ref('')
+
+const filteredRegions = computed(() => {
+  const q = regionSearch.value.trim().toLowerCase()
+  if (!q) return props.regions
+  return props.regions.filter(r => r.toLowerCase().includes(q))
+})
+
+const selectedRegionLabel = computed(() =>
+  props.modelValue.region || 'Все регионы'
+)
+
+function selectRegion(r) {
+  update('region', r)
+  showRegionDrop.value = false
+  regionSearch.value   = ''
+}
+
+function clearRegion() {
+  update('region', '')
+  showRegionDrop.value = false
+  regionSearch.value   = ''
+}
+
+function toggleRegionDrop() {
+  showRegionDrop.value = !showRegionDrop.value
+  if (!showRegionDrop.value) regionSearch.value = ''
+}
+
+function onRegionBlur(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    showRegionDrop.value = false
+    regionSearch.value   = ''
+  }
+}
 </script>
 
 <template>
   <div class="pf">
     <span class="pf__label">Фильтры:</span>
 
-    <!-- Регион -->
+    <!-- Регион — кастомный дроп с поиском -->
     <div class="pf__field">
       <label class="pf__field-label">Регион</label>
-      <div class="pf__select-wrap">
-        <select
-          class="pf__select"
-          :value="modelValue.region"
-          @change="update('region', $event.target.value)"
+      <div
+        class="pf__drop-wrap"
+        tabindex="-1"
+        @blur.capture="onRegionBlur"
+      >
+        <button
+          class="pf__drop-trigger"
+          :class="{ 'pf__drop-trigger--active': modelValue.region }"
+          @click="toggleRegionDrop"
         >
-          <option value="">Все регионы</option>
-          <option v-for="r in regions" :key="r.value ?? r" :value="r.value ?? r">
-            {{ r.label ?? r }}
-          </option>
-        </select>
-        <svg class="pf__chevron" width="10" height="6" viewBox="0 0 10 6" fill="none">
-          <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+          <span class="pf__drop-trigger-text">{{ selectedRegionLabel }}</span>
+          <svg
+            width="9" height="5" viewBox="0 0 9 5" fill="none"
+            class="pf__drop-chevron"
+            :style="showRegionDrop ? 'transform:rotate(180deg)' : ''"
+          >
+            <path d="M1 1l3.5 3L8 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <div v-if="showRegionDrop" class="pf__drop">
+          <!-- Поиск -->
+          <div class="pf__drop-search-wrap">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" class="pf__drop-search-icon">
+              <circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M8 8l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <input
+              v-model="regionSearch"
+              class="pf__drop-search"
+              placeholder="Поиск…"
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Список -->
+          <div class="pf__drop-list">
+            <button class="pf__drop-item" :class="{ 'pf__drop-item--active': !modelValue.region }" @click="clearRegion">
+              Все регионы
+            </button>
+            <p v-if="filteredRegions.length === 0" class="pf__drop-empty">Не найдено</p>
+            <button
+              v-for="r in filteredRegions"
+              :key="r"
+              class="pf__drop-item"
+              :class="{ 'pf__drop-item--active': r === modelValue.region }"
+              @click="selectRegion(r)"
+            >{{ r }}</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -114,7 +188,6 @@ function update(key, val) {
   margin-right: var(--space-1);
 }
 
-/* Разделитель */
 .pf__sep {
   width: 1px;
   height: 20px;
@@ -122,7 +195,6 @@ function update(key, val) {
   flex-shrink: 0;
 }
 
-/* Поле */
 .pf__field {
   display: flex;
   align-items: center;
@@ -136,7 +208,131 @@ function update(key, val) {
   flex-shrink: 0;
 }
 
-/* Обёртка select */
+/* ─── Кастомный дроп региона ─── */
+.pf__drop-wrap {
+  position: relative;
+  outline: none;
+}
+
+.pf__drop-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  color: var(--color-black);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 200px;
+  transition: border-color var(--transition-fast);
+}
+
+.pf__drop-trigger:hover,
+.pf__drop-trigger--active {
+  border-color: var(--color-main-blue);
+}
+
+.pf__drop-trigger--active {
+  color: var(--color-main-blue);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pf__drop-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 80px;
+  max-width: 160px;
+}
+
+.pf__drop-chevron {
+  color: var(--color-pale-black);
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+}
+
+.pf__drop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 300;
+  overflow: hidden;
+}
+
+.pf__drop-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-gray-blue);
+}
+
+.pf__drop-search-icon {
+  color: var(--color-pale-black);
+  flex-shrink: 0;
+}
+
+.pf__drop-search {
+  flex: 1;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  color: var(--color-black);
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+
+.pf__drop-search::placeholder { color: var(--color-pale-black); }
+
+.pf__drop-list {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.pf__drop-empty {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  padding: 10px;
+  text-align: center;
+}
+
+.pf__drop-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  color: var(--color-black);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--transition-fast);
+}
+
+.pf__drop-item:hover { background: var(--color-pale-blue); }
+
+.pf__drop-item--active {
+  color: var(--color-main-blue);
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-pale-blue);
+}
+
+/* ─── Нативный select (НДС) ─── */
 .pf__select-wrap {
   position: relative;
   display: flex;
@@ -170,7 +366,7 @@ function update(key, val) {
   flex-shrink: 0;
 }
 
-/* Дата */
+/* ─── Дата ─── */
 .pf__date {
   height: 32px;
   padding: 0 10px;
@@ -187,38 +383,7 @@ function update(key, val) {
 
 .pf__date:focus { border-color: var(--color-main-blue); }
 
-/* Сегментированные кнопки */
-.pf__seg {
-  display: flex;
-  border: 1px solid var(--color-gray-blue);
-  border-radius: var(--radius-base);
-  overflow: hidden;
-  height: 32px;
-}
-
-.pf__seg-btn {
-  padding: 0 10px;
-  font-family: var(--font-family);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-pale-black);
-  background: #fff;
-  border: none;
-  border-right: 1px solid var(--color-gray-blue);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.pf__seg-btn:last-child { border-right: none; }
-.pf__seg-btn:hover { background: var(--color-pale-blue); }
-
-.pf__seg-btn--active {
-  background: var(--color-main-blue);
-  color: #fff;
-}
-
-/* Кнопка сброса */
+/* ─── Кнопка сброса ─── */
 .pf__reset {
   display: inline-flex;
   align-items: center;
@@ -239,7 +404,6 @@ function update(key, val) {
 
 .pf__reset:hover { background: #fbd7d5; }
 
-/* Анимация появления кнопки сброса */
 .pf-reset-enter-active, .pf-reset-leave-active {
   transition: opacity 200ms ease, transform 200ms ease;
 }
@@ -248,10 +412,9 @@ function update(key, val) {
   transform: scale(0.9);
 }
 
-/* Мобильный */
 @media (max-width: 640px) {
   .pf { gap: var(--space-2) var(--space-3); }
   .pf__sep { display: none; }
-  .pf__select { min-width: 100px; }
+  .pf__drop-trigger-text { max-width: 110px; }
 }
 </style>

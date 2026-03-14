@@ -21,6 +21,10 @@ onMounted(async () => {
   } else if (!store.hasSearched) {
     router.replace("/");
   }
+  // Подставляем регион пользователя в фильтр (если ещё не выбран)
+  if (!store.filters.region && store.userRegion) {
+    store.filters = { ...store.filters, region: store.userRegion };
+  }
 });
 
 const {
