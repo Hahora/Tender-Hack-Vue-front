@@ -1,17 +1,21 @@
 <script setup>
-import { computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { usePriceStore }       from '../stores/priceStore.js'
-import { usePriceCalculation, formatPrice, formatDate } from '../composables/usePriceCalculation.js'
-import AppButton from '../components/ui/AppButton.vue'
+import { computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { usePriceStore } from "../stores/priceStore.js";
+import {
+  usePriceCalculation,
+  formatPrice,
+  formatDate,
+} from "../composables/usePriceCalculation.js";
+import AppButton from "../components/ui/AppButton.vue";
 
-const router = useRouter()
-const route  = useRoute()
-const store  = usePriceStore()
+const router = useRouter();
+const route = useRoute();
+const store = usePriceStore();
 
 // Если нет данных — гоним на главную
 if (!store.hasSearched) {
-  router.replace('/')
+  router.replace("/");
 }
 
 // Статистика по всей выборке нужна для контекста
@@ -23,78 +27,86 @@ const {
 } = usePriceCalculation(
   computed(() => store.procurements),
   computed(() => store.filters),
-  computed(() => store.requestedQty),
-)
+  computed(() => store.requestedQty)
+);
 
 // Находим конкретную закупку по id из URL
-const procurement = computed(() =>
-  processedProcurements.value.find(p => p.id === route.params.id)
-    ?? store.procurements.find(p => p.id === route.params.id)
-)
+const procurement = computed(
+  () =>
+    processedProcurements.value.find((p) => p.id === route.params.id) ??
+    store.procurements.find((p) => p.id === route.params.id)
+);
 
 // Статус закупки для отображения бейджа
 const statusMap = {
-  excluded: { label: 'Исключено',  color: '#8c8c8c', bg: '#f5f5f5' },
-  outlier:  { label: 'Выброс IQR', color: '#c27000', bg: '#fff6e4' },
-  manual:   { label: 'Вручную',    color: '#167c85', bg: '#e4f4f5' },
-  active:   { label: 'Учтено',     color: '#0d9b68', bg: '#e6f5ee' },
-}
+  excluded: { label: "Исключено", color: "#8c8c8c", bg: "#f5f5f5" },
+  outlier: { label: "Выброс IQR", color: "#c27000", bg: "#fff6e4" },
+  manual: { label: "Вручную", color: "#167c85", bg: "#e4f4f5" },
+  active: { label: "Учтено", color: "#0d9b68", bg: "#e6f5ee" },
+};
 
 const status = computed(() => {
-  const p = procurement.value
-  if (!p) return statusMap.active
-  if (p.isExcluded)  return statusMap.excluded
-  if (p.isOutlier)   return statusMap.outlier
-  if (p.manualPrice) return statusMap.manual
-  return statusMap.active
-})
+  const p = procurement.value;
+  if (!p) return statusMap.active;
+  if (p.isExcluded) return statusMap.excluded;
+  if (p.isOutlier) return statusMap.outlier;
+  if (p.manualPrice) return statusMap.manual;
+  return statusMap.active;
+});
 
 // Отклонение цены от средневзвешенной по выборке (в процентах)
 const deviation = computed(() => {
-  const avg = weightedAvgUnitPrice.value
-  const price = procurement.value?.unitPrice
-  if (!avg || !price) return null
-  return ((price - avg) / avg) * 100
-})
+  const avg = weightedAvgUnitPrice.value;
+  const price = procurement.value?.unitPrice;
+  if (!avg || !price) return null;
+  return ((price - avg) / avg) * 100;
+});
 
 // Позиция цены среди всех учтённых закупок (процентиль)
 const priceRank = computed(() => {
-  const prices = validProcurements.value.map(p => p.unitPrice).sort((a, b) => a - b)
-  const price  = procurement.value?.unitPrice
-  if (!prices.length || !price) return null
-  const below = prices.filter(v => v < price).length
-  return Math.round((below / prices.length) * 100)
-})
+  const prices = validProcurements.value
+    .map((p) => p.unitPrice)
+    .sort((a, b) => a - b);
+  const price = procurement.value?.unitPrice;
+  if (!prices.length || !price) return null;
+  const below = prices.filter((v) => v < price).length;
+  return Math.round((below / prices.length) * 100);
+});
 
 function toggleExclude() {
-  store.toggleExclude(procurement.value.id)
+  store.toggleExclude(procurement.value.id);
 }
 
-const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
+const isManualEntry = computed(() => procurement.value?.id?.startsWith("MAN-"));
 </script>
 
 <template>
   <div class="detail">
-
     <!-- Закупка не найдена -->
     <div v-if="!procurement" class="detail__not-found container">
       <p class="detail__not-found-title">Закупка не найдена</p>
       <p class="detail__not-found-sub">Возможно, данные сессии были сброшены</p>
-      <AppButton variant="primary" @click="router.replace('/')">На главную</AppButton>
+      <AppButton variant="primary" @click="router.replace('/')"
+        >На главную</AppButton
+      >
     </div>
 
     <template v-else>
-
       <!-- ===== Шапка ===== -->
       <div class="detail__header-wrap">
         <div class="container">
           <div class="detail__header">
-
             <!-- Навигация и заголовок -->
             <div class="detail__header-left">
               <button class="detail__back" @click="router.back()">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path
+                    d="M10 3L5 8l5 5"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
                 </svg>
                 Назад к результатам
               </button>
@@ -102,12 +114,19 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
               <div class="detail__title-row">
                 <h1 class="detail__title">{{ procurement.name }}</h1>
                 <div class="detail__badges">
-                  <span v-if="isManualEntry" class="detail__badge detail__badge--manual">Ручной ввод</span>
+                  <span
+                    v-if="isManualEntry"
+                    class="detail__badge detail__badge--manual"
+                    >Ручной ввод</span
+                  >
                   <span
                     class="detail__badge"
                     :style="{ color: status.color, background: status.bg }"
                   >
-                    <span class="detail__badge-dot" :style="{ background: status.color }" />
+                    <span
+                      class="detail__badge-dot"
+                      :style="{ background: status.color }"
+                    />
                     {{ status.label }}
                   </span>
                 </div>
@@ -122,7 +141,9 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
             <!-- Главная цена -->
             <div class="detail__price-block">
               <span class="detail__price-label">Цена за единицу</span>
-              <span class="detail__price">{{ formatPrice(procurement.unitPrice) }}</span>
+              <span class="detail__price">{{
+                formatPrice(procurement.unitPrice)
+              }}</span>
               <span class="detail__price-unit">/ {{ procurement.unit }}</span>
 
               <!-- Отклонение от средней -->
@@ -130,15 +151,15 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
                 v-if="deviation !== null"
                 class="detail__deviation"
                 :class="{
-                  'detail__deviation--up':   deviation > 5,
+                  'detail__deviation--up': deviation > 5,
                   'detail__deviation--down': deviation < -5,
-                  'detail__deviation--ok':   Math.abs(deviation) <= 5,
+                  'detail__deviation--ok': Math.abs(deviation) <= 5,
                 }"
               >
-                {{ deviation > 0 ? '+' : '' }}{{ deviation.toFixed(1) }}% от средней
+                {{ deviation > 0 ? "+" : "" }}{{ deviation.toFixed(1) }}% от
+                средней
               </span>
             </div>
-
           </div>
         </div>
       </div>
@@ -146,65 +167,100 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
       <!-- ===== Тело ===== -->
       <div class="container detail__body">
         <div class="detail__layout">
-
           <!-- ─── Левая колонка ─── -->
           <div class="detail__main">
-
             <!-- Основные данные -->
             <section class="detail__card">
               <h2 class="detail__card-title">Данные закупки</h2>
 
               <div class="detail__grid">
-                <div class="detail__field" style="grid-column: 1 / -1;">
-                  <span class="detail__field-label">Реестровый номер контракта</span>
-                  <span class="detail__field-value detail__field-value--mono">{{ procurement.contractNumber ?? '—' }}</span>
+                <div class="detail__field" style="grid-column: 1 / -1">
+                  <span class="detail__field-label"
+                    >Реестровый номер контракта</span
+                  >
+                  <span class="detail__field-value detail__field-value--mono">{{
+                    procurement.contractNumber ?? "—"
+                  }}</span>
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Поставщик</span>
-                  <span class="detail__field-value">{{ procurement.supplier }}</span>
+                  <span class="detail__field-value">{{
+                    procurement.supplier
+                  }}</span>
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Заказчик</span>
-                  <span class="detail__field-value">{{ procurement.customer }}</span>
+                  <span class="detail__field-value">{{
+                    procurement.customer
+                  }}</span>
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Регион</span>
                   <span class="detail__field-value">
-                    <svg width="11" height="13" viewBox="0 0 11 13" fill="none" style="flex-shrink:0">
-                      <path d="M5.5 1C3.57 1 2 2.57 2 4.5c0 2.6 3.5 8 3.5 8s3.5-5.4 3.5-8C9 2.57 7.43 1 5.5 1z" stroke="currentColor" stroke-width="1.2"/>
+                    <svg
+                      width="11"
+                      height="13"
+                      viewBox="0 0 11 13"
+                      fill="none"
+                      style="flex-shrink: 0"
+                    >
+                      <path
+                        d="M5.5 1C3.57 1 2 2.57 2 4.5c0 2.6 3.5 8 3.5 8s3.5-5.4 3.5-8C9 2.57 7.43 1 5.5 1z"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                      />
                     </svg>
                     {{ procurement.region }}
                   </span>
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Дата закупки</span>
-                  <span class="detail__field-value">{{ formatDate(procurement.date) }}</span>
+                  <span class="detail__field-value">{{
+                    formatDate(procurement.date)
+                  }}</span>
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Количество</span>
-                  <span class="detail__field-value">{{ procurement.quantity }}&nbsp;{{ procurement.unit }}</span>
+                  <span class="detail__field-value"
+                    >{{ procurement.quantity }}&nbsp;{{
+                      procurement.unit
+                    }}</span
+                  >
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Правовая база</span>
                   <span class="detail__field-value">{{ procurement.law }}</span>
                 </div>
                 <div class="detail__field">
-                  <span class="detail__field-label">Цена за единицу (без НДС)</span>
-                  <span class="detail__field-value detail__field-value--accent">{{ formatPrice(procurement.unitPrice) }}</span>
+                  <span class="detail__field-label"
+                    >Цена за единицу (без НДС)</span
+                  >
+                  <span
+                    class="detail__field-value detail__field-value--accent"
+                    >{{ formatPrice(procurement.unitPrice) }}</span
+                  >
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Ставка НДС</span>
                   <span class="detail__field-value detail__field-value--vat">
-                    {{ procurement.vatRate != null ? `${procurement.vatRate}%` : 'Без НДС' }}
+                    {{
+                      procurement.vatRate != null
+                        ? `${procurement.vatRate}%`
+                        : "Без НДС"
+                    }}
                   </span>
                 </div>
                 <div v-if="procurement.priceWithVat" class="detail__field">
                   <span class="detail__field-label">Цена с НДС</span>
-                  <span class="detail__field-value detail__field-value--bold">{{ formatPrice(procurement.priceWithVat) }}</span>
+                  <span class="detail__field-value detail__field-value--bold">{{
+                    formatPrice(procurement.priceWithVat)
+                  }}</span>
                 </div>
                 <div class="detail__field">
                   <span class="detail__field-label">Итоговая стоимость</span>
-                  <span class="detail__field-value detail__field-value--bold">{{ formatPrice(procurement.totalPrice) }}</span>
+                  <span class="detail__field-value detail__field-value--bold">{{
+                    formatPrice(procurement.totalPrice)
+                  }}</span>
                 </div>
               </div>
             </section>
@@ -227,37 +283,66 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
                   <div
                     class="detail__rank-iqr"
                     :style="{
-                      left:  ((statistics.q1 - statistics.minPrice) / (statistics.maxPrice - statistics.minPrice) * 100) + '%',
-                      width: ((statistics.q3 - statistics.q1)       / (statistics.maxPrice - statistics.minPrice) * 100) + '%',
+                      left:
+                        ((statistics.q1 - statistics.minPrice) /
+                          (statistics.maxPrice - statistics.minPrice)) *
+                          100 +
+                        '%',
+                      width:
+                        ((statistics.q3 - statistics.q1) /
+                          (statistics.maxPrice - statistics.minPrice)) *
+                          100 +
+                        '%',
                     }"
                   />
                   <!-- Средняя -->
                   <div
                     class="detail__rank-avg"
                     :style="{
-                      left: ((weightedAvgUnitPrice - statistics.minPrice) / (statistics.maxPrice - statistics.minPrice) * 100) + '%',
+                      left:
+                        ((weightedAvgUnitPrice - statistics.minPrice) /
+                          (statistics.maxPrice - statistics.minPrice)) *
+                          100 +
+                        '%',
                     }"
                   />
                   <!-- Текущая цена -->
                   <div
                     class="detail__rank-marker"
-                    :class="{ 'detail__rank-marker--outlier': procurement.isOutlier }"
+                    :class="{
+                      'detail__rank-marker--outlier': procurement.isOutlier,
+                    }"
                     :style="{
-                      left: Math.max(0, Math.min(100, ((procurement.unitPrice - statistics.minPrice) / (statistics.maxPrice - statistics.minPrice) * 100))) + '%',
+                      left:
+                        Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            ((procurement.unitPrice - statistics.minPrice) /
+                              (statistics.maxPrice - statistics.minPrice)) *
+                              100
+                          )
+                        ) + '%',
                     }"
                   />
                 </div>
                 <div class="detail__rank-legend">
                   <span class="detail__rank-legend-item">
-                    <span class="detail__rank-legend-dot detail__rank-legend-dot--iqr" />
+                    <span
+                      class="detail__rank-legend-dot detail__rank-legend-dot--iqr"
+                    />
                     IQR-диапазон
                   </span>
                   <span class="detail__rank-legend-item">
-                    <span class="detail__rank-legend-dot detail__rank-legend-dot--avg" />
+                    <span
+                      class="detail__rank-legend-dot detail__rank-legend-dot--avg"
+                    />
                     Средняя
                   </span>
                   <span class="detail__rank-legend-item">
-                    <span class="detail__rank-legend-dot detail__rank-legend-dot--marker" />
+                    <span
+                      class="detail__rank-legend-dot detail__rank-legend-dot--marker"
+                    />
                     Эта закупка
                   </span>
                 </div>
@@ -267,44 +352,65 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
               <div class="detail__compare">
                 <div class="detail__compare-item">
                   <span class="detail__compare-label">Средневзвешенная</span>
-                  <span class="detail__compare-value">{{ formatPrice(weightedAvgUnitPrice) }}</span>
+                  <span class="detail__compare-value">{{
+                    formatPrice(weightedAvgUnitPrice)
+                  }}</span>
                 </div>
                 <div class="detail__compare-item">
                   <span class="detail__compare-label">Медиана</span>
-                  <span class="detail__compare-value">{{ formatPrice(statistics.medianPrice) }}</span>
+                  <span class="detail__compare-value">{{
+                    formatPrice(statistics.medianPrice)
+                  }}</span>
                 </div>
                 <div class="detail__compare-item">
                   <span class="detail__compare-label">Q1 (25%)</span>
-                  <span class="detail__compare-value">{{ formatPrice(statistics.q1) }}</span>
+                  <span class="detail__compare-value">{{
+                    formatPrice(statistics.q1)
+                  }}</span>
                 </div>
                 <div class="detail__compare-item">
                   <span class="detail__compare-label">Q3 (75%)</span>
-                  <span class="detail__compare-value">{{ formatPrice(statistics.q3) }}</span>
+                  <span class="detail__compare-value">{{
+                    formatPrice(statistics.q3)
+                  }}</span>
                 </div>
               </div>
             </section>
 
             <!-- Предупреждение о выбросе -->
-            <div v-if="procurement.isOutlier && !procurement.isExcluded" class="detail__outlier-warn">
+            <div
+              v-if="procurement.isOutlier && !procurement.isExcluded"
+              class="detail__outlier-warn"
+            >
               <svg width="16" height="15" viewBox="0 0 16 15" fill="none">
-                <path d="M8 .5L15.5 13.5H.5L8 .5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-                <path d="M8 5v4M8 11v.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                <path
+                  d="M8 .5L15.5 13.5H.5L8 .5z"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M8 5v4M8 11v.4"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
               </svg>
               <div>
                 <p class="detail__outlier-warn-title">Выброс по методу IQR</p>
                 <p class="detail__outlier-warn-text">
-                  Цена выходит за допустимый статистический диапазон
-                  [{{ formatPrice(statistics.q1) }} — {{ formatPrice(statistics.q3) }}]
-                  и автоматически исключена из расчёта НМЦ.
+                  Цена выходит за допустимый статистический диапазон [{{
+                    formatPrice(statistics.q1)
+                  }}
+                  — {{ formatPrice(statistics.q3) }}] и автоматически исключена
+                  из расчёта НМЦК.
                 </p>
               </div>
             </div>
-
           </div>
 
           <!-- ─── Правая колонка ─── -->
           <aside class="detail__sidebar">
-
             <!-- Действия -->
             <section class="detail__card detail__card--actions">
               <h2 class="detail__card-title">Действия</h2>
@@ -312,18 +418,58 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
               <div class="detail__action-btns">
                 <button
                   class="detail__action-btn"
-                  :class="{ 'detail__action-btn--restore': procurement.isExcluded }"
+                  :class="{
+                    'detail__action-btn--restore': procurement.isExcluded,
+                  }"
                   @click="toggleExclude"
                 >
-                  <svg v-if="!procurement.isExcluded" width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.3"/>
-                    <path d="M3.5 6.5L5.5 9l4-5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  <svg
+                    v-if="!procurement.isExcluded"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 13 13"
+                    fill="none"
+                  >
+                    <circle
+                      cx="6.5"
+                      cy="6.5"
+                      r="5.5"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                    />
+                    <path
+                      d="M3.5 6.5L5.5 9l4-5"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                    />
                   </svg>
-                  <svg v-else width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.3"/>
-                    <path d="M4 4l5 5M9 4l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  <svg
+                    v-else
+                    width="13"
+                    height="13"
+                    viewBox="0 0 13 13"
+                    fill="none"
+                  >
+                    <circle
+                      cx="6.5"
+                      cy="6.5"
+                      r="5.5"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                    />
+                    <path
+                      d="M4 4l5 5M9 4l-5 5"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                    />
                   </svg>
-                  {{ procurement.isExcluded ? 'Включить в расчёт' : 'Исключить из расчёта' }}
+                  {{
+                    procurement.isExcluded
+                      ? "Включить в расчёт"
+                      : "Исключить из расчёта"
+                  }}
                 </button>
               </div>
             </section>
@@ -334,40 +480,54 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
               <div class="detail__stats">
                 <div class="detail__stat">
                   <span class="detail__stat-label">Всего источников</span>
-                  <span class="detail__stat-value">{{ statistics.count + statistics.outlierCount + statistics.excludedCount }}</span>
+                  <span class="detail__stat-value">{{
+                    statistics.count +
+                    statistics.outlierCount +
+                    statistics.excludedCount
+                  }}</span>
                 </div>
                 <div class="detail__stat">
                   <span class="detail__stat-label">Учтено в расчёте</span>
-                  <span class="detail__stat-value detail__stat-value--green">{{ statistics.count }}</span>
+                  <span class="detail__stat-value detail__stat-value--green">{{
+                    statistics.count
+                  }}</span>
                 </div>
                 <div class="detail__stat">
                   <span class="detail__stat-label">Выбросов IQR</span>
-                  <span class="detail__stat-value detail__stat-value--orange">{{ statistics.outlierCount }}</span>
+                  <span class="detail__stat-value detail__stat-value--orange">{{
+                    statistics.outlierCount
+                  }}</span>
                 </div>
                 <div class="detail__stat">
                   <span class="detail__stat-label">Исключено вручную</span>
-                  <span class="detail__stat-value detail__stat-value--gray">{{ statistics.excludedCount }}</span>
+                  <span class="detail__stat-value detail__stat-value--gray">{{
+                    statistics.excludedCount
+                  }}</span>
                 </div>
-                <hr class="detail__stat-divider">
+                <hr class="detail__stat-divider" />
                 <div class="detail__stat">
                   <span class="detail__stat-label">Мин. цена</span>
-                  <span class="detail__stat-value">{{ formatPrice(statistics.minPrice) }}</span>
+                  <span class="detail__stat-value">{{
+                    formatPrice(statistics.minPrice)
+                  }}</span>
                 </div>
                 <div class="detail__stat">
                   <span class="detail__stat-label">Макс. цена</span>
-                  <span class="detail__stat-value">{{ formatPrice(statistics.maxPrice) }}</span>
+                  <span class="detail__stat-value">{{
+                    formatPrice(statistics.maxPrice)
+                  }}</span>
                 </div>
                 <div class="detail__stat">
                   <span class="detail__stat-label">Средневзвешенная</span>
-                  <span class="detail__stat-value detail__stat-value--blue">{{ formatPrice(weightedAvgUnitPrice) }}</span>
+                  <span class="detail__stat-value detail__stat-value--blue">{{
+                    formatPrice(weightedAvgUnitPrice)
+                  }}</span>
                 </div>
               </div>
             </section>
-
           </aside>
         </div>
       </div>
-
     </template>
   </div>
 </template>
@@ -436,7 +596,9 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   margin-bottom: var(--space-1);
 }
 
-.detail__back:hover { text-decoration: underline; }
+.detail__back:hover {
+  text-decoration: underline;
+}
 
 .detail__title-row {
   display: flex;
@@ -477,8 +639,15 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   flex-shrink: 0;
 }
 
-.detail__badge--law    { background: var(--color-pale-blue); color: var(--color-main-blue); }
-.detail__badge--manual { background: var(--color-pale-blue); color: var(--color-main-blue); border: 1px solid var(--color-gray-blue); }
+.detail__badge--law {
+  background: var(--color-pale-blue);
+  color: var(--color-main-blue);
+}
+.detail__badge--manual {
+  background: var(--color-pale-blue);
+  color: var(--color-main-blue);
+  border: 1px solid var(--color-gray-blue);
+}
 
 .detail__subtitle {
   font-size: var(--font-size-sm);
@@ -522,9 +691,18 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   margin-top: 4px;
 }
 
-.detail__deviation--up   { background: #fdecea; color: var(--color-red); }
-.detail__deviation--down { background: #e6f5ee; color: var(--color-green); }
-.detail__deviation--ok   { background: var(--color-pale-blue); color: var(--color-main-blue); }
+.detail__deviation--up {
+  background: #fdecea;
+  color: var(--color-red);
+}
+.detail__deviation--down {
+  background: #e6f5ee;
+  color: var(--color-green);
+}
+.detail__deviation--ok {
+  background: var(--color-pale-blue);
+  color: var(--color-main-blue);
+}
 
 /* ===== Тело ===== */
 .detail__body {
@@ -598,10 +776,24 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   font-weight: var(--font-weight-regular);
 }
 
-.detail__field-value--accent { color: var(--color-main-blue); font-weight: var(--font-weight-semibold); }
-.detail__field-value--bold   { font-weight: var(--font-weight-bold); font-size: var(--font-size-md); }
-.detail__field-value--mono   { font-family: monospace; font-size: var(--font-size-sm); letter-spacing: 0.03em; color: var(--color-pale-black); }
-.detail__field-value--vat    { color: var(--color-sea-dark); font-weight: var(--font-weight-semibold); }
+.detail__field-value--accent {
+  color: var(--color-main-blue);
+  font-weight: var(--font-weight-semibold);
+}
+.detail__field-value--bold {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+}
+.detail__field-value--mono {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.03em;
+  color: var(--color-pale-black);
+}
+.detail__field-value--vat {
+  color: var(--color-sea-dark);
+  font-weight: var(--font-weight-semibold);
+}
 
 /* ===== Место в выборке ===== */
 .detail__rank {
@@ -660,7 +852,7 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   border: 2.5px solid var(--color-main-blue);
   border-radius: 50%;
   z-index: 1;
-  box-shadow: 0 1px 4px rgba(38,75,130,0.25);
+  box-shadow: 0 1px 4px rgba(38, 75, 130, 0.25);
 }
 
 .detail__rank-marker--outlier {
@@ -688,9 +880,20 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   flex-shrink: 0;
 }
 
-.detail__rank-legend-dot--iqr    { background: var(--color-pale-blue); }
-.detail__rank-legend-dot--avg    { background: var(--color-main-blue); width: 2px; height: 12px; border-radius: 1px; }
-.detail__rank-legend-dot--marker { background: #fff; border: 2px solid var(--color-main-blue); border-radius: 50%; }
+.detail__rank-legend-dot--iqr {
+  background: var(--color-pale-blue);
+}
+.detail__rank-legend-dot--avg {
+  background: var(--color-main-blue);
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+}
+.detail__rank-legend-dot--marker {
+  background: #fff;
+  border: 2px solid var(--color-main-blue);
+  border-radius: 50%;
+}
 
 /* Сравнение -->  */
 .detail__compare {
@@ -779,7 +982,8 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   border: 1px solid var(--color-gray-blue);
   border-radius: var(--radius-base);
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .detail__action-btn:hover {
@@ -787,8 +991,13 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   border-color: var(--color-main-blue);
 }
 
-.detail__action-btn--restore       { color: var(--color-green); }
-.detail__action-btn--restore:hover { background: #e6f5ee; border-color: var(--color-green); }
+.detail__action-btn--restore {
+  color: var(--color-green);
+}
+.detail__action-btn--restore:hover {
+  background: #e6f5ee;
+  border-color: var(--color-green);
+}
 
 /* Форма редактирования */
 .detail__edit-form {
@@ -862,7 +1071,9 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   color: #fff;
 }
 
-.detail__edit-save:hover { background: #1a3660; }
+.detail__edit-save:hover {
+  background: #1a3660;
+}
 
 .detail__edit-cancel {
   background: none;
@@ -870,7 +1081,10 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   border: 1px solid var(--color-gray-blue);
 }
 
-.detail__edit-cancel:hover { background: var(--color-gray-blue); color: var(--color-black); }
+.detail__edit-cancel:hover {
+  background: var(--color-gray-blue);
+  color: var(--color-black);
+}
 
 /* ===== Статистика ===== */
 .detail__stats {
@@ -887,7 +1101,9 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   border-bottom: 1px solid #f0f0f0;
 }
 
-.detail__stat:last-child { border-bottom: none; }
+.detail__stat:last-child {
+  border-bottom: none;
+}
 
 .detail__stat-divider {
   border: none;
@@ -906,10 +1122,18 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
   color: var(--color-black);
 }
 
-.detail__stat-value--green  { color: var(--color-green); }
-.detail__stat-value--orange { color: var(--color-orange); }
-.detail__stat-value--gray   { color: var(--color-pale-black); }
-.detail__stat-value--blue   { color: var(--color-main-blue); }
+.detail__stat-value--green {
+  color: var(--color-green);
+}
+.detail__stat-value--orange {
+  color: var(--color-orange);
+}
+.detail__stat-value--gray {
+  color: var(--color-pale-black);
+}
+.detail__stat-value--blue {
+  color: var(--color-main-blue);
+}
 
 /* ===== Анимация формы ===== */
 .detail-edit-enter-active,
@@ -927,18 +1151,40 @@ const isManualEntry = computed(() => procurement.value?.id?.startsWith('MAN-'))
 
 /* ===== Адаптив ===== */
 @media (max-width: 1024px) {
-  .detail__layout { grid-template-columns: 1fr; }
-  .detail__sidebar { position: static; order: -1; }
+  .detail__layout {
+    grid-template-columns: 1fr;
+  }
+  .detail__sidebar {
+    position: static;
+    order: -1;
+  }
 }
 
 @media (max-width: 768px) {
-  .detail__header { flex-direction: column; }
-  .detail__price-block { align-items: flex-start; }
-  .detail__grid { grid-template-columns: 1fr; }
-  .detail__compare { grid-template-columns: 1fr; }
-  .detail__title { font-size: var(--font-size-xl); }
-  .detail__price { font-size: var(--font-size-2xl); }
-  .detail__rank-labels { flex-direction: column; gap: 2px; }
-  .detail__rank-center { order: -1; }
+  .detail__header {
+    flex-direction: column;
+  }
+  .detail__price-block {
+    align-items: flex-start;
+  }
+  .detail__grid {
+    grid-template-columns: 1fr;
+  }
+  .detail__compare {
+    grid-template-columns: 1fr;
+  }
+  .detail__title {
+    font-size: var(--font-size-xl);
+  }
+  .detail__price {
+    font-size: var(--font-size-2xl);
+  }
+  .detail__rank-labels {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .detail__rank-center {
+    order: -1;
+  }
 }
 </style>

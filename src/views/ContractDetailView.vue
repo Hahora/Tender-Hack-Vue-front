@@ -39,17 +39,6 @@ const first = computed(() => procurements.value[0] || null)
           <p class="cd__eyebrow">Реестровый номер контракта</p>
           <h1 class="cd__title">{{ contractNumber }}</h1>
         </div>
-        <a
-          :href="`https://zakupki.gov.ru/epz/contract/search/results.html?searchString=${contractNumber}`"
-          target="_blank"
-          rel="noopener"
-          class="cd__eis-link"
-        >
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <path d="M6 1.5H2.5A1 1 0 001.5 2.5v9A1 1 0 002.5 12.5h9a1 1 0 001-1V8M8.5 1.5h4v4M5.5 8.5l7-7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Открыть в ЕИС
-        </a>
       </div>
 
       <!-- Мета: поставщик, заказчик, регион, дата -->

@@ -3,8 +3,11 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader    from './components/AppHeader.vue'
 import AppSubHeader from './components/AppSubHeader.vue'
+import RegionBanner from './components/RegionBanner.vue'
+import { usePriceStore } from './stores/priceStore.js'
 
 const router = useRouter()
+const priceStore = usePriceStore()
 
 const subHeaderRef   = ref(null)
 const isRouteLoading = ref(false)
@@ -26,7 +29,10 @@ function onKeydown(e) {
   if (e.key === 'Escape') closeSearch()
 }
 
-onMounted(()    => document.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+  priceStore.detectRegion()
+})
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 router.beforeEach(() => {
@@ -46,6 +52,9 @@ router.afterEach(()  => {
 
     <!-- Шапка -->
     <AppHeader @focus-search="onFocusSearch" />
+
+    <!-- Плашка подтверждения региона -->
+    <RegionBanner />
 
     <!-- Подшапка с поиском (скрыта по умолчанию) -->
     <Transition name="subheader">

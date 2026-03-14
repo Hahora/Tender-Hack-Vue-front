@@ -36,10 +36,22 @@ const routes = [
     meta: { title: 'Детали закупки' },
   },
   {
-    path: '/contracts',
+    path: '/contracts/:ste',
     name: 'contracts',
     component: () => import('../views/ContractListView.vue'),
-    meta: { title: 'Контракты' },
+    meta: { title: 'Контракты по СТЕ' },
+  },
+  {
+    path: '/all-contracts',
+    name: 'all-contracts',
+    component: () => import('../views/AllContractsView.vue'),
+    meta: { title: 'Все контракты' },
+  },
+  {
+    path: '/cart',
+    name: 'cart',
+    component: () => import('../views/CartView.vue'),
+    meta: { title: 'Корзина закупок' },
   },
   {
     path: '/ste/:id',
@@ -52,6 +64,12 @@ const routes = [
     name: 'contract-detail',
     component: () => import('../views/ContractDetailView.vue'),
     meta: { title: 'Контракт' },
+  },
+  {
+    path: '/history',
+    name: 'history',
+    component: () => import('../views/HistoryView.vue'),
+    meta: { title: 'История закупок' },
   },
   // Редирект с любого несуществующего пути на главную
   {

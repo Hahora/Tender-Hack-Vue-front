@@ -1,46 +1,99 @@
 <script setup>
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { usePriceStore } from '../stores/priceStore.js'
-import { formatPrice, formatDate } from '../composables/usePriceCalculation.js'
+import { ref, computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { usePriceStore } from "../stores/priceStore.js";
+import { formatPrice, formatDate } from "../composables/usePriceCalculation.js";
 
-const router = useRouter()
-const store  = usePriceStore()
+const router = useRouter();
+const route  = useRoute();
+const store  = usePriceStore();
 
 if (!store.hasSearched) {
-  router.replace('/')
+  router.replace("/");
 }
 
-// Группируем закупки по номеру контракта
+// СТЕ из URL-параметра
+const steParam = route.params.ste;
+
+// Мультивыбор: Set из 'active' | 'outlier'. Пустой = показать все
+const initFilter = route.query.filter;
+const activeFilters = ref(
+  initFilter ? new Set([initFilter]) : new Set()
+);
+
+function toggleFilter(key) {
+  const s = new Set(activeFilters.value);
+  if (s.has(key)) s.delete(key); else s.add(key);
+  activeFilters.value = s;
+}
+
+// Группируем закупки по номеру контракта, фильтруем по СТЕ из URL
 const contracts = computed(() => {
-  const map = new Map()
+  const map = new Map();
   for (const p of store.procurements) {
+    if (steParam && p.steNumber !== steParam) continue;
     if (!map.has(p.contractNumber)) {
       map.set(p.contractNumber, {
         contractNumber: p.contractNumber,
-        supplier:       p.supplier,
-        customer:       p.customer,
-        region:         p.region,
-        date:           p.date,
-        vatRate:        p.vatRate,
-        items:          [],
-      })
+        steNumber: p.steNumber,
+        supplier: p.supplier,
+        customer: p.customer,
+        region: p.region,
+        date: p.date,
+        vatRate: p.vatRate,
+        items: [],
+      });
     }
-    map.get(p.contractNumber).items.push(p)
+    map.get(p.contractNumber).items.push(p);
   }
-  // Сортируем по дате — сначала новые
-  return [...map.values()].sort((a, b) => new Date(b.date) - new Date(a.date))
-})
+  return [...map.values()].sort((a, b) => new Date(b.date) - new Date(a.date));
+});
 
-// Сумма по контракту
+// Статус контракта
+function contractStatus(c) {
+  const hasActive  = c.items.some(p => !p.isOutlier || p.manualInclude);
+  const hasOutlier = c.items.some(p => p.isOutlier && !p.manualInclude);
+  if (hasOutlier && !hasActive) return "outlier";
+  if (hasOutlier && hasActive)  return "mixed";
+  return "active";
+}
+
+const filtered = computed(() => {
+  if (activeFilters.value.size === 0) return contracts.value;
+  return contracts.value.filter(c => {
+    const s = contractStatus(c);
+    if (activeFilters.value.has("active")  && (s === "active" || s === "mixed"))  return true;
+    if (activeFilters.value.has("outlier") && (s === "outlier" || s === "mixed")) return true;
+    return false;
+  });
+});
+
+const counts = computed(() => ({
+  all:     contracts.value.length,
+  active:  contracts.value.filter(c => contractStatus(c) !== "outlier").length,
+  outlier: contracts.value.filter(c => contractStatus(c) !== "active").length,
+}));
+
 function contractTotal(items) {
-  return items.reduce((sum, p) => sum + p.totalPrice, 0)
+  return items.reduce((sum, p) => sum + p.totalPrice, 0);
+}
+
+function toggleContractInclude(c) {
+  const allIncluded = c.items.every(p => !p.isOutlier || p.manualInclude);
+  for (const p of c.items) {
+    if (p.isOutlier) {
+      if (allIncluded) {
+        if (p.manualInclude) store.toggleManualInclude(p.id);
+      } else {
+        if (!p.manualInclude) store.toggleManualInclude(p.id);
+      }
+    }
+  }
 }
 </script>
 
 <template>
   <div class="cl container">
-
     <!-- Назад -->
     <button class="cl__back" @click="router.back()">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -52,54 +105,166 @@ function contractTotal(items) {
     <!-- Заголовок -->
     <div class="cl__header">
       <div>
-        <p class="cl__eyebrow">СТЕ</p>
+        <p class="cl__eyebrow">
+          Контракты по СТЕ
+          <template v-if="steParam">
+            &nbsp;·&nbsp;
+            <button
+              class="cl__ste-link"
+              @click="router.push({ name: 'ste-detail', params: { id: steParam } })"
+            >{{ steParam }}</button>
+          </template>
+        </p>
         <h1 class="cl__title">{{ store.steQuery }}</h1>
       </div>
       <div class="cl__badge">{{ contracts.length }} контрактов</div>
     </div>
 
-    <!-- Список -->
-    <div v-if="contracts.length === 0" class="cl__empty">Контракты не найдены</div>
-
-    <div v-else class="cl__list">
+    <!-- Фильтр по статусу -->
+    <div class="cl__filters">
       <button
-        v-for="c in contracts"
-        :key="c.contractNumber"
-        class="cl__card"
-        @click="router.push({ name: 'contract-detail', params: { number: c.contractNumber } })"
+        class="cl__filter-btn"
+        :class="{ 'cl__filter-btn--active': activeFilters.size === 0 }"
+        @click="activeFilters = new Set()"
       >
-        <!-- Номер + дата -->
-        <div class="cl__card-top">
-          <span class="cl__contract-num">{{ c.contractNumber }}</span>
-          <span class="cl__date">{{ formatDate(c.date) }}</span>
-        </div>
-
-        <!-- Поставщик и заказчик -->
-        <div class="cl__card-mid">
-          <div class="cl__meta">
-            <span class="cl__meta-label">Поставщик</span>
-            <span class="cl__meta-val">{{ c.supplier }}</span>
-          </div>
-          <div class="cl__meta">
-            <span class="cl__meta-label">Регион</span>
-            <span class="cl__meta-val">{{ c.region }}</span>
-          </div>
-        </div>
-
-        <!-- Позиции + сумма -->
-        <div class="cl__card-bot">
-          <span class="cl__items-count">{{ c.items.length }} поз.</span>
-          <span class="cl__vat">НДС {{ c.vatRate != null ? `${c.vatRate}%` : 'нет' }}</span>
-          <span class="cl__total">{{ formatPrice(contractTotal(c.items)) }}</span>
-        </div>
-
-        <!-- Стрелка -->
-        <svg class="cl__arrow" width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        Все <span class="cl__filter-count">{{ counts.all }}</span>
+      </button>
+      <button
+        class="cl__filter-btn cl__filter-btn--green"
+        :class="{ 'cl__filter-btn--active': activeFilters.has('active') }"
+        @click="toggleFilter('active')"
+      >
+        <span class="cl__dot cl__dot--green" />
+        Учтено <span class="cl__filter-count">{{ counts.active }}</span>
+      </button>
+      <button
+        class="cl__filter-btn cl__filter-btn--orange"
+        :class="{ 'cl__filter-btn--active': activeFilters.has('outlier') }"
+        @click="toggleFilter('outlier')"
+      >
+        <span class="cl__dot cl__dot--orange" />
+        Выброс IQR <span class="cl__filter-count">{{ counts.outlier }}</span>
       </button>
     </div>
 
+    <!-- Список -->
+    <div v-if="filtered.length === 0" class="cl__empty">
+      Контракты не найдены
+    </div>
+
+    <div v-else class="cl__list">
+      <div
+        v-for="c in filtered"
+        :key="c.contractNumber"
+        class="cl__card"
+        :class="{
+          'cl__card--outlier': contractStatus(c) !== 'active',
+        }"
+        @click="router.push({ name: 'contract-detail', params: { number: c.contractNumber } })"
+      >
+        <!-- Акцентная полоса -->
+        <div class="cl__card-accent" :class="{
+          'cl__card-accent--green':  contractStatus(c) === 'active',
+          'cl__card-accent--orange': contractStatus(c) !== 'active',
+        }" />
+
+        <div class="cl__card-inner">
+
+          <!-- Верх: мета + цена -->
+          <div class="cl__card-row">
+
+            <!-- Левая: номер, статус, поставщик, регион -->
+            <div class="cl__card-left">
+              <div class="cl__card-meta">
+                <span class="cl__contract-num">{{ c.contractNumber }}</span>
+                <span
+                  class="cl__status-badge"
+                  :class="{
+                    'cl__status-badge--green':  contractStatus(c) === 'active',
+                    'cl__status-badge--orange': contractStatus(c) === 'outlier',
+                    'cl__status-badge--teal':   contractStatus(c) === 'mixed',
+                  }"
+                >
+                  <span class="cl__status-dot" />
+                  {{ contractStatus(c) === 'active' ? 'Учтено' : contractStatus(c) === 'outlier' ? 'Выброс IQR' : 'Частично учтено' }}
+                </span>
+              </div>
+              <div class="cl__date">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                  <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                  <path d="M4 1v2M8 1v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <path d="M1 5h10" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+                {{ formatDate(c.date) }}
+              </div>
+              <div class="cl__card-details">
+                <div class="cl__detail">
+                  <span class="cl__detail-label">Поставщик</span>
+                  <span class="cl__detail-val">{{ c.supplier }}</span>
+                </div>
+                <div class="cl__detail">
+                  <span class="cl__detail-label">Заказчик</span>
+                  <span class="cl__detail-val">{{ c.customer }}</span>
+                </div>
+                <div class="cl__detail-row">
+                  <span class="cl__tag">{{ c.region }}</span>
+                  <span class="cl__tag">НДС {{ c.vatRate != null ? `${c.vatRate}%` : 'нет' }}</span>
+                  <span class="cl__tag">{{ c.items.length }} поз.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Правая: цена + итог -->
+            <div class="cl__card-right">
+              <div class="cl__price-area">
+                <span class="cl__price-caption">за единицу</span>
+                <div class="cl__price-row">
+                  <span class="cl__price">{{ formatPrice(c.items[0]?.unitPrice) }}</span>
+                  <span class="cl__price-sep">/</span>
+                  <span class="cl__price-unit">{{ c.items[0]?.unit }}</span>
+                </div>
+              </div>
+              <div class="cl__total-area">
+                <span class="cl__price-caption">сумма контракта</span>
+                <span class="cl__total">{{ formatPrice(contractTotal(c.items)) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Выброс: причина + кнопка -->
+          <div v-if="contractStatus(c) !== 'active'" class="cl__outlier-bar" @click.stop>
+            <div class="cl__outlier-reason">
+              <svg width="12" height="11" viewBox="0 0 13 12" fill="none">
+                <path d="M6.5.5L12.5 11H.5L6.5.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M6.5 4.5v3M6.5 9v.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+              Цена выходит за пределы IQR — не учитывается в расчёте НМЦК
+            </div>
+            <button
+              class="cl__include-btn"
+              :class="{ 'cl__include-btn--active': c.items.some(p => p.isOutlier && p.manualInclude) }"
+              @click.stop="toggleContractInclude(c)"
+            >
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" stroke-width="1.2"/>
+                <path v-if="!c.items.some(p => p.isOutlier && p.manualInclude)" d="M3 5.5l2 2 3-3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path v-else d="M3.5 3.5l4 4M7.5 3.5l-4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+              {{ c.items.some(p => p.isOutlier && p.manualInclude) ? 'Убрать из расчёта' : 'Включить в расчёт' }}
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Стрелка -->
+        <div class="cl__card-arrow">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+
+      </div>
+    </div>
   </div>
 </template>
 
@@ -122,7 +287,6 @@ function contractTotal(items) {
   padding: 0;
   margin-bottom: var(--space-5);
 }
-
 .cl__back:hover { text-decoration: underline; }
 
 .cl__header {
@@ -130,7 +294,7 @@ function contractTotal(items) {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-5);
   padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-gray-blue);
 }
@@ -149,6 +313,23 @@ function contractTotal(items) {
   color: var(--color-black);
 }
 
+.cl__ste-link {
+  font-family: monospace;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-main-blue);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(38,75,130,0.35);
+  text-underline-offset: 2px;
+}
+.cl__ste-link:hover {
+  text-decoration-color: var(--color-main-blue);
+}
+
 .cl__badge {
   padding: 5px 14px;
   background: var(--color-pale-blue);
@@ -160,6 +341,57 @@ function contractTotal(items) {
   white-space: nowrap;
 }
 
+/* ===== Фильтры ===== */
+.cl__filters {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.cl__filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-full);
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.cl__filter-btn:hover {
+  border-color: var(--color-main-blue);
+  color: var(--color-main-blue);
+}
+
+.cl__filter-btn--active {
+  background: var(--color-pale-blue);
+  border-color: var(--color-main-blue);
+  color: var(--color-main-blue);
+}
+
+.cl__filter-count {
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  opacity: 0.7;
+}
+
+.cl__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cl__dot--green  { background: var(--color-green); }
+.cl__dot--orange { background: #e8920a; }
+
+/* ===== Список ===== */
 .cl__empty {
   padding: var(--space-12);
   text-align: center;
@@ -167,41 +399,74 @@ function contractTotal(items) {
   font-size: var(--font-size-md);
 }
 
-/* Список карточек */
 .cl__list {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-/* Карточка контракта */
+/* ===== Карточка ===== */
 .cl__card {
-  position: relative;
+  display: flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-left: none;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow var(--transition-fast);
+}
+.cl__card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.cl__card--outlier { background: #fffcf5; }
+
+.cl__card-accent {
+  width: 4px;
+  flex-shrink: 0;
+}
+.cl__card-accent--green  { background: #0d9b68; }
+.cl__card-accent--orange { background: #f9c56a; }
+
+.cl__card-inner {
+  flex: 1;
+  padding: var(--space-4) var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  padding-right: 48px;
-  background: #fff;
-  border: 1px solid var(--color-gray-blue);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font-family);
-  width: 100%;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  min-width: 0;
 }
 
-.cl__card:hover {
-  border-color: var(--color-main-blue);
-  box-shadow: var(--shadow-base);
-}
-
-.cl__card-top {
+.cl__card-arrow {
   display: flex;
   align-items: center;
+  padding: 0 var(--space-4);
+  color: var(--color-gray-light);
+  flex-shrink: 0;
+  transition: color var(--transition-fast);
+}
+.cl__card:hover .cl__card-arrow { color: var(--color-main-blue); }
+
+/* Основная строка карточки */
+.cl__card-row {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-5);
+}
+
+.cl__card-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cl__card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .cl__contract-num {
@@ -209,76 +474,189 @@ function contractTotal(items) {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--color-main-blue);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
+}
+
+.cl__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+.cl__status-badge--green  { color: #0d9b68; background: #e6f5ee; }
+.cl__status-badge--orange { color: #c27000; background: #fff6e4; }
+.cl__status-badge--teal   { color: #167c85; background: #e4f4f5; }
+
+.cl__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .cl__date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--font-size-xs);
   color: var(--color-pale-black);
+  white-space: nowrap;
 }
 
-.cl__card-mid {
-  display: flex;
-  gap: var(--space-6);
-}
-
-.cl__meta {
+.cl__card-details {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
-.cl__meta-label {
-  font-size: 11px;
+.cl__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cl__detail-label {
+  font-size: 10px;
   color: var(--color-pale-black);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.cl__meta-val {
+.cl__detail-val {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   color: var(--color-black);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cl__card-bot {
+.cl__detail-row {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.cl__tag {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-full);
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+/* Правая: цена */
+.cl__card-right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: right;
+}
+
+.cl__price-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.cl__price-caption {
+  font-size: 10px;
+  color: var(--color-pale-black);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cl__price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.cl__price {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-black);
+  white-space: nowrap;
+}
+
+.cl__price-sep {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
+}
+
+.cl__price-unit {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
+}
+
+.cl__total-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   padding-top: var(--space-2);
   border-top: 1px solid var(--color-gray-blue);
-}
-
-.cl__items-count {
-  font-size: var(--font-size-xs);
-  color: var(--color-pale-black);
-  padding: 2px 8px;
-  background: var(--color-pale-blue);
-  border-radius: var(--radius-full);
-}
-
-.cl__vat {
-  font-size: var(--font-size-xs);
-  color: var(--color-pale-black);
+  width: 100%;
 }
 
 .cl__total {
-  margin-left: auto;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-main-blue);
+  white-space: nowrap;
 }
 
-.cl__arrow {
-  position: absolute;
-  right: var(--space-5);
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--color-gray-light);
+/* Строка выброса */
+.cl__outlier-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: #fff8ed;
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.cl__outlier-reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: #7a4400;
+  line-height: 1.4;
+}
+
+/* Кнопка включить/убрать */
+.cl__include-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: #c27000;
+  background: #fff0cc;
+  border: 1px solid #f5c96a;
+  border-radius: var(--radius-base);
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
   flex-shrink: 0;
 }
-
-.cl__card:hover .cl__arrow {
-  color: var(--color-main-blue);
-}
+.cl__include-btn:hover { background: #ffe5a0; border-color: #e6a800; }
+.cl__include-btn--active { color: #0d9b68; background: #e6f5ee; border-color: #0d9b68; }
+.cl__include-btn--active:hover { background: #cceedd; border-color: #0a7a52; }
 </style>

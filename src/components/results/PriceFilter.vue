@@ -85,23 +85,6 @@ function update(key, val) {
       />
     </div>
 
-    <div class="pf__sep" />
-
-    <!-- Выбросы -->
-    <div class="pf__field">
-      <label class="pf__field-label">Выбросы</label>
-      <div class="pf__seg">
-        <button
-          v-for="opt in [{ v: 'all', l: 'Все' }, { v: 'hide', l: 'Без' }, { v: 'only', l: 'Только' }]"
-          :key="opt.v"
-          class="pf__seg-btn"
-          :class="{ 'pf__seg-btn--active': modelValue.outliers === opt.v }"
-          type="button"
-          @click="update('outliers', opt.v)"
-        >{{ opt.l }}</button>
-      </div>
-    </div>
-
     <!-- Кнопка сброса -->
     <Transition name="pf-reset">
       <button v-if="activeCount" class="pf__reset" @click="$emit('reset')">

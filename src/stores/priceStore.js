@@ -15,6 +15,13 @@ export const usePriceStore = defineStore('price', () => {
   const hasSearched = ref(false)
   const error       = ref(null)
 
+  /* ─── Геолокация ─── */
+  const userRegion        = ref('Москва')   // активный регион (fallback если геолокация недоступна)
+  const detectedRegion    = ref('')         // что нашла геолокация (до подтверждения)
+  const regionDetecting   = ref(false)
+  const regionDetected    = ref(false)
+  const regionConfirmed   = ref(false)      // пользователь подтвердил/отклонил
+
   /* ─── Данные закупок ─── */
   const procurements = ref([])
 
@@ -101,6 +108,34 @@ export const usePriceStore = defineStore('price', () => {
     if (p) p.manualInclude = !p.manualInclude
   }
 
+  /* ─── Определить регион по геолокации ─── */
+  async function detectRegion() {
+    if (regionDetected.value || regionDetecting.value) return
+    if (!navigator.geolocation) return
+    regionDetecting.value = true
+    try {
+      const pos = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 })
+      )
+      const { latitude: lat, longitude: lon } = pos.coords
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=ru`,
+        { headers: { 'Accept-Language': 'ru' } }
+      )
+      const data = await res.json()
+      const raw  = data.address?.state || data.address?.city || data.address?.county || ''
+      if (raw) {
+        detectedRegion.value = raw
+        userRegion.value     = raw   // сразу применяем — пользователь может откорректировать в баннере
+      }
+      regionDetected.value = true
+    } catch {
+      // Геолокация отклонена или недоступна — оставляем Московская область
+    } finally {
+      regionDetecting.value = false
+    }
+  }
+
   /* ─── Сбросить ручные изменения ─── */
   function resetManual() {
     procurements.value = procurements.value
@@ -115,6 +150,7 @@ export const usePriceStore = defineStore('price', () => {
 
   return {
     steQuery, isLoading, hasSearched, error,
+    userRegion, detectedRegion, regionDetecting, regionDetected, regionConfirmed, detectRegion,
     procurements,
     filters,
     requestedQty, requestedUnit,

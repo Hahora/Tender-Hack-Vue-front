@@ -1,8 +1,10 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/authStore.js'
 
 const router = useRouter()
+const auth   = useAuthStore()
 
 const loginVal = ref('')
 const pwdVal   = ref('')
@@ -12,7 +14,7 @@ const error    = ref('')
 function submit() {
   error.value = ''
   if (loginVal.value === 'admin' && pwdVal.value === 'admin') {
-    localStorage.setItem('isAuth', 'true')
+    auth.login(loginVal.value)
     router.push({ name: 'home' })
   } else {
     error.value = 'Неверный логин или пароль'

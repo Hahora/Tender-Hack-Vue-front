@@ -51,7 +51,7 @@ const STATS = [
           </h1>
 
           <p class="home__hero-subtitle">
-            Автоматизированный расчёт НМЦ на основе данных ЕИС. Фильтрация
+            Автоматизированный расчёт НМЦК на основе данных ЕИС. Фильтрация
             выбросов, ручная корректировка и формирование обосновывающего
             документа по требованиям Приказа МЭР № 567.
           </p>
@@ -90,7 +90,7 @@ const STATS = [
               <span
                 class="home__preview-header-dot home__preview-header-dot--green"
               />
-              <span class="home__preview-header-title">Расчёт НМЦ</span>
+              <span class="home__preview-header-title">Расчёт НМЦК</span>
             </div>
             <div class="home__preview-body">
               <div class="home__preview-row home__preview-row--label">
@@ -281,14 +281,13 @@ const STATS = [
             <div class="home__step-num">04</div>
             <h3 class="home__step-title">Сохраните документ</h3>
             <p class="home__step-desc">
-              Получите готовое обоснование НМЦ по Приказу МЭР № 567 с расчётом и
-              ссылками на источники
+              Получите готовое обоснование НМЦК по Приказу МЭР № 567 с расчётом
+              и ссылками на источники
             </p>
           </div>
         </div>
       </div>
     </section>
-
   </div>
 </template>
 
@@ -765,7 +764,7 @@ const STATS = [
 }
 
 .home__step::after {
-  content: '→';
+  content: "→";
   position: absolute;
   right: calc(-1 * var(--space-4) / 2 - 7px);
   top: 50%;
@@ -936,19 +935,39 @@ const STATS = [
    АДАПТИВ
    =========================== */
 @media (max-width: 1100px) {
-  .home__hero-inner   { grid-template-columns: 1fr; gap: var(--space-8); }
-  .home__hero-preview { display: none; }
-  .home__legal-inner  { grid-template-columns: 1fr; gap: var(--space-8); }
-  .home__stats-inner  { grid-template-columns: repeat(2, 1fr); }
-  .home__stat:nth-child(2) { border-right: none; }
+  .home__hero-inner {
+    grid-template-columns: 1fr;
+    gap: var(--space-8);
+  }
+  .home__hero-preview {
+    display: none;
+  }
+  .home__legal-inner {
+    grid-template-columns: 1fr;
+    gap: var(--space-8);
+  }
+  .home__stats-inner {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .home__stat:nth-child(2) {
+    border-right: none;
+  }
   .home__stat:nth-child(1),
-  .home__stat:nth-child(2) { border-bottom: 1px solid var(--color-gray-blue); }
+  .home__stat:nth-child(2) {
+    border-bottom: 1px solid var(--color-gray-blue);
+  }
 }
 
 @media (max-width: 768px) {
-  .home__hero { padding: 44px 0 48px; }
-  .home__hero-title { font-size: clamp(1.5rem, 6vw, 2.2rem); }
-  .home__hero-subtitle { font-size: var(--font-size-sm); }
+  .home__hero {
+    padding: 44px 0 48px;
+  }
+  .home__hero-title {
+    font-size: clamp(1.5rem, 6vw, 2.2rem);
+  }
+  .home__hero-subtitle {
+    font-size: var(--font-size-sm);
+  }
 
   /* Статы: переключаем каждый в вертикальный вид */
   .home__stat {
@@ -957,26 +976,58 @@ const STATS = [
     gap: 2px;
     padding: var(--space-3) var(--space-4);
   }
-  .home__stat-value { font-size: var(--font-size-base); }
-  .home__stat-note  { display: none; }
+  .home__stat-value {
+    font-size: var(--font-size-base);
+  }
+  .home__stat-note {
+    display: none;
+  }
 
-  .home__steps { flex-direction: column; gap: var(--space-3); }
-  .home__step  { padding: var(--space-4); }
-  .home__step::after { display: none; }
-  .home__how, .home__legal { padding: 48px 0; }
-  .home__how-title   { font-size: var(--font-size-2xl); }
-  .home__legal-title { font-size: var(--font-size-xl); }
-  .home__how-head    { margin-bottom: var(--space-8); }
+  .home__steps {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .home__step {
+    padding: var(--space-4);
+  }
+  .home__step::after {
+    display: none;
+  }
+  .home__how,
+  .home__legal {
+    padding: 48px 0;
+  }
+  .home__how-title {
+    font-size: var(--font-size-2xl);
+  }
+  .home__legal-title {
+    font-size: var(--font-size-xl);
+  }
+  .home__how-head {
+    margin-bottom: var(--space-8);
+  }
 }
 
 @media (max-width: 540px) {
-  .home__hero { padding: 32px 0 40px; }
-  .home__hero-title { font-size: 1.5rem; line-height: 1.2; }
-  .home__hero-subtitle { font-size: var(--font-size-sm); }
-  .home__examples { flex-direction: column; align-items: flex-start; }
+  .home__hero {
+    padding: 32px 0 40px;
+  }
+  .home__hero-title {
+    font-size: 1.5rem;
+    line-height: 1.2;
+  }
+  .home__hero-subtitle {
+    font-size: var(--font-size-sm);
+  }
+  .home__examples {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
   /* Статы: 2 колонки, каждый стат — вертикально (значение над подписью) */
-  .home__stats-inner { grid-template-columns: 1fr 1fr; }
+  .home__stats-inner {
+    grid-template-columns: 1fr 1fr;
+  }
   .home__stat {
     flex-direction: column;
     align-items: flex-start;
@@ -984,16 +1035,36 @@ const STATS = [
     gap: 2px;
   }
   .home__stat:nth-child(1),
-  .home__stat:nth-child(3) { border-right: 1px solid var(--color-gray-blue); }
+  .home__stat:nth-child(3) {
+    border-right: 1px solid var(--color-gray-blue);
+  }
   .home__stat:nth-child(2),
-  .home__stat:nth-child(4) { border-right: none; }
-  .home__stat-value { font-size: var(--font-size-base); white-space: normal; }
-  .home__stat-label { font-size: 11px; }
-  .home__stat-note  { display: none; }
+  .home__stat:nth-child(4) {
+    border-right: none;
+  }
+  .home__stat-value {
+    font-size: var(--font-size-base);
+    white-space: normal;
+  }
+  .home__stat-label {
+    font-size: 11px;
+  }
+  .home__stat-note {
+    display: none;
+  }
 
-  .home__how-title  { font-size: var(--font-size-xl); }
-  .home__legal-card { padding: var(--space-3) var(--space-4); }
-  .home__legal-tags { gap: var(--space-1); }
-  .home__legal-tag  { font-size: 10px; padding: 3px 8px; }
+  .home__how-title {
+    font-size: var(--font-size-xl);
+  }
+  .home__legal-card {
+    padding: var(--space-3) var(--space-4);
+  }
+  .home__legal-tags {
+    gap: var(--space-1);
+  }
+  .home__legal-tag {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
 }
 </style>

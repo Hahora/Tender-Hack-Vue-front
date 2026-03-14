@@ -1,73 +1,138 @@
 <script setup>
-import { ref, computed } from 'vue'
-import AppButton from '../ui/AppButton.vue'
-import { formatPrice } from '../../composables/usePriceCalculation.js'
+import { ref, computed } from "vue";
+import { useRouter } from "vue-router";
+import AppButton from "../ui/AppButton.vue";
+import { formatPrice } from "../../composables/usePriceCalculation.js";
+import { useCartStore } from "../../stores/cartStore.js";
+import { usePriceStore } from "../../stores/priceStore.js";
+
+const router     = useRouter();
+const cart       = useCartStore();
+const priceStore = usePriceStore();
 
 const props = defineProps({
-  unitPrice:         { type: Number, default: 0 },
-  totalNmts:         { type: Number, default: 0 },
-  statistics:        { type: Object, required: true },
-  requestedQty:      { type: Number, default: 1 },
-  unit:              { type: String, default: 'шт' },
-  justificationText: { type: String, default: '' },
-  docVersion:        { type: Number, default: 1 },
-  isRecalculating:   { type: Boolean, default: false },
-})
+  unitPrice: { type: Number, default: 0 },
+  totalNmts: { type: Number, default: 0 },
+  statistics: { type: Object, required: true },
+  requestedQty: { type: Number, default: 1 },
+  unit: { type: String, default: "шт" },
+  justificationText: { type: String, default: "" },
+  docVersion: { type: Number, default: 1 },
+  isRecalculating: { type: Boolean, default: false },
+});
 
-const emit = defineEmits(['go-document', 'recalculate'])
+const emit = defineEmits([
+  "go-document",
+  "recalculate",
+  "update:requestedQty",
+  "update:unit",
+]);
 
-const showJustification = ref(false)
+const showJustification = ref(false);
+const addedToCart = ref(false);
 
-const hasEnoughData = computed(() => props.statistics.count >= 3)
+const hasEnoughData = computed(() => props.statistics.count >= 3);
+
+function addToCart() {
+  cart.addItem({
+    steQuery:          priceStore.steQuery,
+    unitPrice:         props.unitPrice,
+    totalNmts:         props.totalNmts,
+    requestedQty:      props.requestedQty,
+    requestedUnit:     props.unit,
+    justificationText: props.justificationText,
+    sourcesCount:      props.statistics.count,
+  });
+  addedToCart.value = true;
+  setTimeout(() => { addedToCart.value = false; }, 2000);
+}
 
 // Позиция медианы на шкале мин–макс
 const medianPosition = computed(() => {
-  const { minPrice, maxPrice, medianPrice } = props.statistics
-  if (!maxPrice || maxPrice === minPrice) return 50
-  return Math.round(((medianPrice - minPrice) / (maxPrice - minPrice)) * 100)
-})
+  const { minPrice, maxPrice, medianPrice } = props.statistics;
+  if (!maxPrice || maxPrice === minPrice) return 50;
+  return Math.round(((medianPrice - minPrice) / (maxPrice - minPrice)) * 100);
+});
 </script>
 
 <template>
   <div class="cs">
-
     <!-- Заголовок -->
     <div class="cs__header">
       <div class="cs__header-left">
-        <h3 class="cs__title">Расчёт НМЦ</h3>
+        <h3 class="cs__title">Расчёт НМЦК</h3>
         <span class="cs__method">Метод сопоставимых рыночных цен</span>
       </div>
       <div class="cs__header-right">
-<span :class="['cs__status-badge', hasEnoughData ? 'cs__status-badge--ok' : 'cs__status-badge--warn']">
-          {{ hasEnoughData ? 'Достаточно данных' : 'Мало данных' }}
+        <span
+          :class="[
+            'cs__status-badge',
+            hasEnoughData ? 'cs__status-badge--ok' : 'cs__status-badge--warn',
+          ]"
+        >
+          {{ hasEnoughData ? "Достаточно данных" : "Мало данных" }}
         </span>
       </div>
     </div>
 
-    <!-- Источники — одна строка с чипами -->
+    <!-- Параметры расчёта -->
+    <div class="cs__params">
+      <span class="cs__params-label">Параметры расчёта</span>
+      <div class="cs__params-fields">
+        <label class="cs__param-item">
+          <span class="cs__param-name">Количество</span>
+          <input
+            type="number"
+            min="1"
+            class="cs__param-input cs__param-input--qty"
+            :value="requestedQty"
+            @input="emit('update:requestedQty', +$event.target.value)"
+          />
+        </label>
+        <label class="cs__param-item">
+          <span class="cs__param-name">Единица</span>
+          <input
+            type="text"
+            class="cs__param-input cs__param-input--unit"
+            placeholder="шт"
+            :value="unit"
+            @input="emit('update:unit', $event.target.value)"
+          />
+        </label>
+      </div>
+    </div>
+
+    <!-- Источники — статистика контрактов -->
     <div class="cs__sources">
-      <span class="cs__chip">
-        Всего&nbsp;<strong>{{ statistics.count + statistics.outlierCount + statistics.excludedCount }}</strong>
-      </span>
-      <span class="cs__chip cs__chip--green">
-        <span class="cs__dot cs__dot--green" />
-        Учтено&nbsp;<strong>{{ statistics.count }}</strong>
-      </span>
-      <span class="cs__chip cs__chip--orange">
-        <span class="cs__dot cs__dot--orange" />
-        Выброс&nbsp;<strong>{{ statistics.outlierCount }}</strong>
-      </span>
-<span v-if="statistics.excludedCount" class="cs__chip cs__chip--gray">
-        <span class="cs__dot cs__dot--gray" />
-        Вручную&nbsp;<strong>{{ statistics.excludedCount }}</strong>
-      </span>
+      <span class="cs__sources-label">Контрактов</span>
+      <div class="cs__sources-chips">
+        <button class="cs__chip cs__chip--btn" @click="router.push({ name: 'all-contracts' })">
+          Всего&nbsp;<strong>{{
+            statistics.count + statistics.outlierCount + statistics.excludedCount
+          }}</strong>
+        </button>
+        <button class="cs__chip cs__chip--btn cs__chip--green" @click="router.push({ name: 'all-contracts', query: { filter: 'active' } })">
+          <span class="cs__dot cs__dot--green" />
+          Учтено&nbsp;<strong>{{ statistics.count }}</strong>
+        </button>
+        <button class="cs__chip cs__chip--btn cs__chip--orange" @click="router.push({ name: 'all-contracts', query: { filter: 'outlier' } })">
+          <span class="cs__dot cs__dot--orange" />
+          Выброс&nbsp;<strong>{{ statistics.outlierCount }}</strong>
+        </button>
+        <button v-if="statistics.excludedCount" class="cs__chip cs__chip--btn cs__chip--gray" @click="router.push({ name: 'all-contracts' })">
+          <span class="cs__dot cs__dot--gray" />
+          Вручную&nbsp;<strong>{{ statistics.excludedCount }}</strong>
+        </button>
+      </div>
     </div>
 
     <!-- Ценовой диапазон -->
     <div class="cs__range">
       <div class="cs__range-labels">
         <span>{{ formatPrice(statistics.minPrice) }}</span>
-        <span class="cs__range-title">диапазон · медиана {{ formatPrice(statistics.medianPrice) }}</span>
+        <span class="cs__range-title"
+          >диапазон · медиана {{ formatPrice(statistics.medianPrice) }}</span
+        >
         <span>{{ formatPrice(statistics.maxPrice) }}</span>
       </div>
       <div class="cs__range-bar">
@@ -92,7 +157,13 @@ const medianPosition = computed(() => {
       </div>
       <div class="cs__nmc-wrap">
         <span class="cs__nmc-label">= НМЦ контракта</span>
-        <div class="cs__nmc" :class="{ 'cs__nmc--ready': hasEnoughData, 'cs__nmc--dim': !hasEnoughData }">
+        <div
+          class="cs__nmc"
+          :class="{
+            'cs__nmc--ready': hasEnoughData,
+            'cs__nmc--dim': !hasEnoughData,
+          }"
+        >
           {{ formatPrice(totalNmts) }}
         </div>
       </div>
@@ -101,33 +172,91 @@ const medianPosition = computed(() => {
     <!-- Предупреждение -->
     <div v-if="!hasEnoughData" class="cs__warning">
       <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-        <path d="M7 1L13 12H1L7 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-        <path d="M7 5v3M7 9.5v.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        <path
+          d="M7 1L13 12H1L7 1z"
+          stroke="currentColor"
+          stroke-width="1.2"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M7 5v3M7 9.5v.3"
+          stroke="currentColor"
+          stroke-width="1.2"
+          stroke-linecap="round"
+        />
       </svg>
       Нужно не менее 3 источников для надёжного расчёта.
     </div>
 
     <!-- Действия -->
     <div class="cs__actions">
-      <AppButton variant="danger" size="md" block :disabled="!hasEnoughData" @click="$emit('go-document')">
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <path d="M1 1h2l1.5 7h7l1.5-6H4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="6" cy="12" r="1" fill="currentColor"/>
-          <circle cx="11" cy="12" r="1" fill="currentColor"/>
+      <AppButton
+        variant="danger"
+        size="md"
+        block
+        :disabled="!hasEnoughData"
+        @click="addToCart"
+      >
+        <svg v-if="!addedToCart" width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path
+            d="M1 1h2l1.5 7h7l1.5-6H4"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <circle cx="6" cy="12" r="1" fill="currentColor" />
+          <circle cx="11" cy="12" r="1" fill="currentColor" />
         </svg>
-        Добавить в закупку
+        <svg v-else width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        {{ addedToCart ? 'Добавлено!' : 'Добавить в закупку' }}
       </AppButton>
       <div class="cs__actions-row">
-        <AppButton variant="outline" size="md" block :loading="isRecalculating" @click="$emit('recalculate')">
-          <svg v-if="!isRecalculating" width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <path d="M2 7a5 5 0 0 1 8.5-3.5L12 2M12 2v3H9M12 7a5 5 0 0 1-8.5 3.5L2 12M2 12V9h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        <AppButton
+          variant="outline"
+          size="md"
+          block
+          :loading="isRecalculating"
+          @click="$emit('recalculate')"
+        >
+          <svg
+            v-if="!isRecalculating"
+            width="13"
+            height="13"
+            viewBox="0 0 14 14"
+            fill="none"
+          >
+            <path
+              d="M2 7a5 5 0 0 1 8.5-3.5L12 2M12 2v3H9M12 7a5 5 0 0 1-8.5 3.5L2 12M2 12V9h3"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
           Пересчитать
         </AppButton>
-        <AppButton variant="outline" size="md" block :disabled="!hasEnoughData" @click="$emit('go-document')">
+        <AppButton
+          variant="outline"
+          size="md"
+          block
+          :disabled="!hasEnoughData"
+          @click="$emit('go-document')"
+        >
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L8 1z" stroke="currentColor" stroke-width="1.3"/>
-            <path d="M8 1v5h5M5 8h4M5 10.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            <path
+              d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L8 1z"
+              stroke="currentColor"
+              stroke-width="1.3"
+            />
+            <path
+              d="M8 1v5h5M5 8h4M5 10.5h3"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+            />
           </svg>
           Документ
         </AppButton>
@@ -136,17 +265,45 @@ const medianPosition = computed(() => {
 
     <!-- Обоснование — в самом низу, раскрывается по клику -->
     <div v-if="justificationText" class="cs__justification">
-      <button class="cs__just-toggle" @click="showJustification = !showJustification">
+      <button
+        class="cs__just-toggle"
+        @click="showJustification = !showJustification"
+      >
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/>
-          <path d="M4 5h6M4 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <rect
+            x="1"
+            y="2"
+            width="12"
+            height="10"
+            rx="1"
+            stroke="currentColor"
+            stroke-width="1.3"
+          />
+          <path
+            d="M4 5h6M4 8h4"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+          />
         </svg>
         Обоснование расчёта
         <svg
-          width="10" height="6" viewBox="0 0 12 7" fill="none"
-          :style="{ transform: showJustification ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }"
+          width="10"
+          height="6"
+          viewBox="0 0 12 7"
+          fill="none"
+          :style="{
+            transform: showJustification ? 'rotate(180deg)' : 'none',
+            transition: 'transform 200ms',
+          }"
         >
-          <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path
+            d="M1 1l5 5 5-5"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
       </button>
       <Transition name="just-expand">
@@ -155,7 +312,6 @@ const medianPosition = computed(() => {
         </div>
       </Transition>
     </div>
-
   </div>
 </template>
 
@@ -222,18 +378,115 @@ const medianPosition = computed(() => {
   white-space: nowrap;
 }
 
-.cs__status-badge--ok   { background: #e6f5ee; color: var(--color-green); }
-.cs__status-badge--warn { background: #fff0e4; color: var(--color-orange); }
+.cs__status-badge--ok {
+  background: #e6f5ee;
+  color: var(--color-green);
+}
+.cs__status-badge--warn {
+  background: #fff0e4;
+  color: var(--color-orange);
+}
+
+/* ===== Параметры расчёта ===== */
+.cs__params {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-gray-blue);
+}
+
+.cs__params-label {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.cs__params-fields {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.cs__param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.cs__param-name {
+  font-size: 11px;
+  color: var(--color-pale-black);
+  white-space: nowrap;
+}
+
+.cs__param-input {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  padding: 5px 8px;
+  outline: none;
+  height: 32px;
+  width: 100%;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.cs__param-input:focus {
+  border-color: var(--color-main-blue);
+  background: #fff;
+}
+
+.cs__param-input--qty {
+  text-align: center;
+}
+
+.cs__param-input--unit {
+  text-align: left;
+}
 
 /* ===== Источники — одна строка чипов ===== */
 .cs__sources {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--color-gray-blue);
 }
+
+.cs__sources-label {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-pale-black);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.cs__sources-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.cs__chip--btn {
+  cursor: pointer;
+  font-family: var(--font-family);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.cs__chip--btn:hover {
+  border-color: var(--color-main-blue);
+  background: #dce8f5;
+}
+
+.cs__chip--btn.cs__chip--green:hover  { border-color: #0d9b68; background: #cceedd; }
+.cs__chip--btn.cs__chip--orange:hover { border-color: #c27000; background: #ffe5a0; }
 
 .cs__chip {
   display: inline-flex;
@@ -247,12 +500,28 @@ const medianPosition = computed(() => {
   padding: 2px 8px;
 }
 
-.cs__chip strong { color: var(--color-black); font-weight: var(--font-weight-bold); }
-.cs__chip--green { background: #eaf5ef; border-color: #b2ddc6; }
-.cs__chip--green strong { color: var(--color-green); }
-.cs__chip--orange { background: #fff4e5; border-color: #f5d49a; }
-.cs__chip--orange strong { color: var(--color-orange); }
-.cs__chip--gray { background: #f5f5f5; border-color: #ddd; }
+.cs__chip strong {
+  color: var(--color-black);
+  font-weight: var(--font-weight-bold);
+}
+.cs__chip--green {
+  background: #eaf5ef;
+  border-color: #b2ddc6;
+}
+.cs__chip--green strong {
+  color: var(--color-green);
+}
+.cs__chip--orange {
+  background: #fff4e5;
+  border-color: #f5d49a;
+}
+.cs__chip--orange strong {
+  color: var(--color-orange);
+}
+.cs__chip--gray {
+  background: #f5f5f5;
+  border-color: #ddd;
+}
 
 .cs__dot {
   width: 6px;
@@ -261,9 +530,15 @@ const medianPosition = computed(() => {
   flex-shrink: 0;
 }
 
-.cs__dot--green  { background: var(--color-green); }
-.cs__dot--orange { background: var(--color-orange); }
-.cs__dot--gray   { background: var(--color-gray-blue); }
+.cs__dot--green {
+  background: var(--color-green);
+}
+.cs__dot--orange {
+  background: var(--color-orange);
+}
+.cs__dot--gray {
+  background: var(--color-gray-blue);
+}
 
 /* ===== Диапазон цен ===== */
 .cs__range {
@@ -298,7 +573,11 @@ const medianPosition = computed(() => {
 .cs__range-fill {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, var(--color-main-blue), var(--color-sea-clear));
+  background: linear-gradient(
+    90deg,
+    var(--color-main-blue),
+    var(--color-sea-clear)
+  );
   border-radius: 3px;
 }
 
@@ -312,7 +591,7 @@ const medianPosition = computed(() => {
   border: 2px solid var(--color-main-blue);
   border-radius: 50%;
   cursor: default;
-  box-shadow: 0 0 0 2px rgba(38,75,130,0.12);
+  box-shadow: 0 0 0 2px rgba(38, 75, 130, 0.12);
 }
 
 /* ===== Формула ===== */
@@ -366,8 +645,12 @@ const medianPosition = computed(() => {
   text-align: right;
 }
 
-.cs__nmc--ready { color: var(--color-main-blue); }
-.cs__nmc--dim   { color: var(--color-gray-light); }
+.cs__nmc--ready {
+  color: var(--color-main-blue);
+}
+.cs__nmc--dim {
+  color: var(--color-gray-light);
+}
 
 /* Предупреждение */
 .cs__warning {
@@ -438,9 +721,16 @@ const medianPosition = computed(() => {
   overscroll-behavior: contain;
 }
 
-.cs__just-text::-webkit-scrollbar       { width: 4px; }
-.cs__just-text::-webkit-scrollbar-track { background: transparent; }
-.cs__just-text::-webkit-scrollbar-thumb { background: var(--color-gray-blue); border-radius: 2px; }
+.cs__just-text::-webkit-scrollbar {
+  width: 4px;
+}
+.cs__just-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cs__just-text::-webkit-scrollbar-thumb {
+  background: var(--color-gray-blue);
+  border-radius: 2px;
+}
 
 .just-expand-enter-active,
 .just-expand-leave-active {
