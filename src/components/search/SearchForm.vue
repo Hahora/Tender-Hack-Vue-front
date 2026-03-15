@@ -1,36 +1,42 @@
 <script setup>
-/**
- * Форма поиска СТЕ — главный элемент домашней страницы.
- * Содержит поле ввода, таблицу СТЕ (автодополнение) и кнопку поиска.
- */
-import { ref } from 'vue'
-import AppButton from '../ui/AppButton.vue'
+import { ref } from "vue";
+import AppButton from "../ui/AppButton.vue";
 
 const props = defineProps({
   loading: { type: Boolean, default: false },
-})
+});
 
-const emit = defineEmits(['search'])
+const emit = defineEmits(["search"]);
 
-const query    = ref('')
-const inputRef = ref(null)
+const query = ref("");
+const inputRef = ref(null);
 
 function doSearch() {
-  const q = query.value.trim()
-  if (!q) return
-  emit('search', q)
+  const q = query.value.trim();
+  if (!q) return;
+  emit("search", q);
 }
 </script>
 
 <template>
   <div class="search-form">
     <div class="search-form__wrap">
-
       <!-- Иконка поиска слева -->
       <span class="search-form__icon" aria-hidden="true">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <circle cx="8.5" cy="8.5" r="6.5" stroke="#7F8792" stroke-width="1.8"/>
-          <path d="M14 14l4.5 4.5" stroke="#7F8792" stroke-width="1.8" stroke-linecap="round"/>
+          <circle
+            cx="8.5"
+            cy="8.5"
+            r="6.5"
+            stroke="#7F8792"
+            stroke-width="1.8"
+          />
+          <path
+            d="M14 14l4.5 4.5"
+            stroke="#7F8792"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
         </svg>
       </span>
 
@@ -52,10 +58,18 @@ function doSearch() {
         class="search-form__clear"
         type="button"
         aria-label="Очистить поиск"
-        @click="query = ''; inputRef?.focus()"
+        @click="
+          query = '';
+          inputRef?.focus();
+        "
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path
+            d="M1 1l12 12M13 1L1 13"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
         </svg>
       </button>
 
@@ -68,9 +82,27 @@ function doSearch() {
         @click="doSearch"
       >
         <span class="search-form__btn-text">Найти цены</span>
-        <svg class="search-form__btn-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <circle cx="8.5" cy="8.5" r="6.5" stroke="currentColor" stroke-width="1.8"/>
-          <path d="M14 14l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <svg
+          class="search-form__btn-icon"
+          width="18"
+          height="18"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle
+            cx="8.5"
+            cy="8.5"
+            r="6.5"
+            stroke="currentColor"
+            stroke-width="1.8"
+          />
+          <path
+            d="M14 14l4.5 4.5"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
         </svg>
       </AppButton>
     </div>
@@ -93,7 +125,8 @@ function doSearch() {
   padding: 4px 4px 4px 16px;
   gap: var(--space-2);
   box-shadow: var(--shadow-sm);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .search-form__wrap:focus-within,
@@ -101,7 +134,6 @@ function doSearch() {
   border-color: var(--color-main-blue);
   box-shadow: 0 0 0 3px rgba(38, 75, 130, 0.1);
 }
-
 
 /* --- Иконка --- */
 .search-form__icon {
@@ -127,7 +159,9 @@ function doSearch() {
 }
 
 /* Убираем системную иконку очистки браузера */
-.search-form__input::-webkit-search-cancel-button { display: none; }
+.search-form__input::-webkit-search-cancel-button {
+  display: none;
+}
 
 /* --- Кнопка очистки --- */
 .search-form__clear {
@@ -142,7 +176,8 @@ function doSearch() {
   color: var(--color-pale-black);
   border-radius: var(--radius-base);
   flex-shrink: 0;
-  transition: color var(--transition-fast), background-color var(--transition-fast);
+  transition: color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .search-form__clear:hover {
@@ -161,8 +196,12 @@ function doSearch() {
 }
 
 @media (max-width: 480px) {
-  .search-form__btn-text { display: none; }
-  .search-form__btn-icon { display: block; }
+  .search-form__btn-text {
+    display: none;
+  }
+  .search-form__btn-icon {
+    display: block;
+  }
   .search-form__btn {
     width: 38px !important;
     height: 38px !important;
@@ -170,5 +209,4 @@ function doSearch() {
     justify-content: center;
   }
 }
-
 </style>

@@ -13,7 +13,6 @@ const price  = usePriceStore()
 const auth   = useAuthStore()
 
 const isMobileMenuOpen = ref(false)
-const showCartPreview  = ref(false)
 const showRegionDrop   = ref(false)
 const regionSearch     = ref('')
 
@@ -23,12 +22,9 @@ const filteredRegions = computed(() => {
   return price.availableRegions.filter(r => r.toLowerCase().includes(q))
 })
 
-// Таймеры — чтобы дроп не закрывался при переходе курсора на него
-let cartTimer   = null
+// Таймер — чтобы дроп региона не закрывался при переходе курсора на него
 let regionTimer = null
 
-function openCart()    { clearTimeout(cartTimer);   showCartPreview.value = true }
-function closeCart()   { cartTimer   = setTimeout(() => { showCartPreview.value = false }, 180) }
 function openRegion()  { clearTimeout(regionTimer); showRegionDrop.value  = true }
 function closeRegion() { regionTimer = setTimeout(() => { showRegionDrop.value  = false; regionSearch.value = '' }, 180) }
 
@@ -139,11 +135,7 @@ function logout() {
         </div>
 
         <!-- Корзина -->
-        <div
-          class="header__cart-wrap"
-          @mouseenter="openCart"
-          @mouseleave="closeCart"
-        >
+        <div class="header__cart-wrap">
           <span v-if="cartCount > 0" class="header__cart-badge">{{ cartCount }}</span>
           <button
             class="header__icon-btn"
@@ -158,31 +150,6 @@ function logout() {
             </svg>
             <span class="header__icon-label">Корзина</span>
           </button>
-
-          <!-- Превью корзины -->
-          <Transition name="cart-drop">
-            <div v-if="showCartPreview && cartCount > 0" class="header__cart-drop">
-              <div class="header__cart-drop-head">
-                <span class="header__cart-drop-title">Корзина</span>
-                <span class="header__cart-drop-count">{{ cartCount }} поз.</span>
-              </div>
-              <div class="header__cart-drop-list">
-                <div
-                  v-for="item in cart.items.slice(0, 5)"
-                  :key="item.id"
-                  class="header__cart-drop-item"
-                >
-                  <span class="header__cart-drop-name">{{ item.customName }}</span>
-                  <span class="header__cart-drop-price">{{ formatPrice(item.totalNmts) }}</span>
-                </div>
-                <p v-if="cartCount > 5" class="header__cart-drop-more">+ ещё {{ cartCount - 5 }}</p>
-              </div>
-              <div class="header__cart-drop-footer">
-                <span class="header__cart-drop-total">Итого: {{ formatPrice(cart.grandTotal) }}</span>
-                <button class="header__cart-drop-btn" @click="router.push({ name: 'cart' })">Открыть</button>
-              </div>
-            </div>
-          </Transition>
         </div>
 
         <!-- История закупок -->

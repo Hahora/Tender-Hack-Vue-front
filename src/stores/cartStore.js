@@ -1,83 +1,97 @@
 /**
  * Pinia-хранилище корзины закупок
- * Хранит позиции, добавленные из расчёта НМЦ
+ * Позиции хранятся на бэке (POST/GET/PATCH/DELETE /api/v1/cart)
+ * История — только локально
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { api } from '../api/api.js'
+import { useAuthStore } from './authStore.js'
 
 export const useCartStore = defineStore('cart', () => {
-  const items       = ref([])
-  const cartHistory = ref([])   // архив завершённых корзин
+  const items      = ref([])
+  const isLoading  = ref(false)
 
-  /**
-   * Добавить или обновить позицию в корзине
-   * Если позиция с таким steQuery уже есть — обновляем
-   */
-  function addItem({ steQuery, unitPrice, totalNmts, requestedQty, requestedUnit, justificationText, sourcesCount }) {
-    const existing = items.value.find(i => i.steQuery === steQuery)
-    if (existing) {
-      existing.unitPrice        = unitPrice
-      existing.totalNmts        = totalNmts
-      existing.requestedQty     = requestedQty
-      existing.requestedUnit    = requestedUnit
-      existing.justificationText = justificationText
-      existing.sourcesCount     = sourcesCount
-      existing.updatedAt        = new Date().toISOString()
-    } else {
-      items.value.push({
-        id:               `CART-${Date.now()}`,
-        steQuery,
-        customName:       steQuery,
-        unitPrice,
-        requestedQty,
-        requestedUnit,
-        totalNmts,
-        justificationText,
-        sourcesCount,
-        addedAt:          new Date().toISOString(),
-        updatedAt:        null,
-      })
+  async function withAuth(fn) {
+    const auth = useAuthStore()
+    try {
+      return await fn(auth.accessToken)
+    } catch (err) {
+      if (err.status === 401) {
+        const newToken = await auth.refresh()
+        return await fn(newToken)
+      }
+      throw err
     }
   }
 
-  function removeItem(id) {
+  /** Загрузить корзину с сервера */
+  async function load() {
+    isLoading.value = true
+    try {
+      items.value = await withAuth(token => api.cartList(token))
+    } catch (_e) {
+      items.value = []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Добавить позицию.
+   * Если позиция с таким именем уже есть — обновляем через cart/{id}/nmck
+   */
+  async function addItem({ name, quantity, unit, unit_price, nmck_data }) {
+    const existing = items.value.find(i => i.name === name)
+    if (existing) {
+      // Сначала обновляем quantity/unit через PATCH, затем NMCK через /nmck
+      await withAuth(token =>
+        api.cartPatch(existing.id, { quantity, unit }, token)
+      )
+      const updated = await withAuth(token =>
+        api.cartUpdateNmck(existing.id, { unit_price, nmck_data }, token)
+      )
+      const idx = items.value.findIndex(i => i.id === existing.id)
+      if (idx >= 0) items.value[idx] = { ...updated, quantity, unit }
+      return updated
+    }
+    const item = await withAuth(token =>
+      api.cartAdd({ name, quantity, unit, unit_price, nmck_data }, token)
+    )
+    items.value.unshift(item)
+    return item
+  }
+
+  /** Удалить позицию */
+  async function removeItem(id) {
+    await withAuth(token => api.cartDelete(id, token))
     items.value = items.value.filter(i => i.id !== id)
   }
 
-  function updateItem(id, patch) {
-    const item = items.value.find(i => i.id === id)
-    if (item) Object.assign(item, patch)
+  /** Получить обоснование НМЦ позиции с сервера */
+  async function fetchJustification(id) {
+    return withAuth(token => api.cartJustification(id, token))
   }
 
-  /** Пересчитать НМЦ при изменении кол-ва */
-  function updateQty(id, qty) {
-    const item = items.value.find(i => i.id === id)
-    if (item && qty > 0) {
-      item.requestedQty = qty
-      item.totalNmts    = item.unitPrice * qty
-    }
+  /** Обновить поля позиции (name, quantity, unit, unit_price) */
+  async function patchItem(id, patch) {
+    const updated = await withAuth(token => api.cartPatch(id, patch, token))
+    const idx = items.value.findIndex(i => i.id === id)
+    if (idx >= 0) items.value[idx] = updated
   }
 
-  /**
-   * Архивировать текущую корзину → история, затем очистить
-   * Вызывается при формировании документа
-   */
-  function archiveCart() {
-    if (items.value.length === 0) return
-    const total = items.value.reduce((s, i) => s + i.totalNmts, 0)
-    cartHistory.value.unshift({
-      id:        `HIST-${Date.now()}`,
-      date:      new Date().toISOString(),
-      items:     items.value.map(i => ({ ...i })),
-      total,
-      count:     items.value.length,
-    })
-    items.value = []
+  /** Изменить количество */
+  async function updateQty(id, qty) {
+    if (qty < 1) return
+    await patchItem(id, { quantity: qty })
   }
 
   const grandTotal = computed(() =>
-    items.value.reduce((s, i) => s + i.totalNmts, 0)
+    items.value.reduce((s, i) => s + i.unit_price * i.quantity, 0)
   )
 
-  return { items, cartHistory, grandTotal, addItem, removeItem, updateItem, updateQty, archiveCart }
+  return {
+    items, isLoading, grandTotal,
+    load, addItem, removeItem, fetchJustification, patchItem, updateQty,
+  }
 })

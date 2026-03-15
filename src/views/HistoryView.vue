@@ -1,17 +1,71 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { ref, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
-import { useCartStore } from '../stores/cartStore.js'
+import { useAuthStore } from '../stores/authStore.js'
 import { formatPrice } from '../composables/usePriceCalculation.js'
+import { api } from '../api/api.js'
 
 const router     = useRouter()
-const cart       = useCartStore()
+const auth       = useAuthStore()
 const openSearch = inject('openSearch')
 
-const openId = ref(null)
+const history    = ref([])
+const isLoading  = ref(false)
+const deletingId = ref(null)
+const downloadingId = ref(null)
 
-function toggle(id) {
-  openId.value = openId.value === id ? null : id
+async function withAuth(fn) {
+  try {
+    return await fn(auth.accessToken)
+  } catch (err) {
+    if (err.status === 401) {
+      const token = await auth.refresh()
+      return await fn(token)
+    }
+    throw err
+  }
+}
+
+async function loadHistory() {
+  isLoading.value = true
+  try {
+    history.value = await withAuth(token => api.reportHistory(token))
+  } catch {
+    history.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function redownload(entry) {
+  if (downloadingId.value) return
+  downloadingId.value = entry.id
+  try {
+    const result = await withAuth(token => api.reportHistoryGet(entry.id, token))
+    const url = URL.createObjectURL(result.blob)
+    const a   = document.createElement('a')
+    a.href     = url
+    a.download = result.filename
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    // ignore
+  } finally {
+    downloadingId.value = null
+  }
+}
+
+async function deleteEntry(entry) {
+  if (deletingId.value) return
+  deletingId.value = entry.id
+  try {
+    await withAuth(token => api.reportHistoryDelete(entry.id, token))
+    history.value = history.value.filter(e => e.id !== entry.id)
+  } catch {
+    // ignore
+  } finally {
+    deletingId.value = null
+  }
 }
 
 function formatDate(iso) {
@@ -25,6 +79,8 @@ function pluralPos(n) {
   if (n >= 2 && n <= 4) return 'позиции'
   return 'позиций'
 }
+
+onMounted(loadHistory)
 </script>
 
 <template>
@@ -43,14 +99,23 @@ function pluralPos(n) {
       <div>
         <p class="hist__eyebrow">Закупочная документация</p>
         <h1 class="hist__title">История закупок</h1>
-        <p v-if="cart.cartHistory.length" class="hist__subtitle">
-          {{ cart.cartHistory.length }} завершённых закупок
+        <p v-if="history.length" class="hist__subtitle">
+          {{ history.length }} сформированных документов
         </p>
       </div>
     </div>
 
+    <!-- Загрузка -->
+    <div v-if="isLoading" class="hist__loading">
+      <div class="hist__spinner" />
+      <div>
+        <p class="hist__loading-title">Загружаем историю…</p>
+        <p class="hist__loading-sub">Получаем список документов</p>
+      </div>
+    </div>
+
     <!-- Пусто -->
-    <div v-if="cart.cartHistory.length === 0" class="hist__empty">
+    <div v-else-if="history.length === 0" class="hist__empty">
       <div class="hist__empty-icon">
         <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
           <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2.2"/>
@@ -64,62 +129,55 @@ function pluralPos(n) {
 
     <!-- Список -->
     <div v-else class="hist__list">
-      <div v-for="entry in cart.cartHistory" :key="entry.id" class="hist__entry">
+      <div
+        v-for="entry in history" :key="entry.id"
+        class="hist__entry"
+        @click="router.push({ name: 'document', params: { id: entry.id } })"
+        style="cursor:pointer"
+      >
 
-        <!-- Строка-заголовок -->
-        <button class="hist__entry-head" @click="toggle(entry.id)">
-          <div class="hist__entry-left">
-            <div class="hist__entry-icon">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M10 1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V5L10 1z" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M10 1v4h4M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              </svg>
-            </div>
-            <div class="hist__entry-info">
-              <span class="hist__entry-date">{{ formatDate(entry.date) }}</span>
-              <span class="hist__entry-meta">{{ entry.count }} {{ pluralPos(entry.count) }}</span>
-            </div>
-          </div>
-          <div class="hist__entry-right">
-            <span class="hist__entry-total">{{ formatPrice(entry.total) }}</span>
-            <svg
-              class="hist__entry-chevron"
-              :class="{ 'hist__entry-chevron--open': openId === entry.id }"
-              width="14" height="14" viewBox="0 0 14 14" fill="none"
-            >
-              <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <div class="hist__entry-left">
+          <div class="hist__entry-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V5L10 1z" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M10 1v4h4M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
             </svg>
           </div>
-        </button>
+          <div class="hist__entry-info">
+            <span class="hist__entry-date">{{ formatDate(entry.created_at) }}</span>
+            <div class="hist__entry-meta-row">
+              <span class="hist__entry-meta">{{ entry.item_count }} {{ pluralPos(entry.item_count) }}</span>
+              <span class="hist__entry-source" :class="entry.source === 'cart' ? 'hist__entry-source--cart' : 'hist__entry-source--single'">
+                {{ entry.source === 'cart' ? 'Из корзины' : 'Разовый' }}
+              </span>
+            </div>
+          </div>
+        </div>
 
-        <!-- Раскрытый список -->
-        <div v-if="openId === entry.id" class="hist__entry-body">
-          <table class="hist__table">
-            <thead>
-              <tr>
-                <th class="hist__th hist__th--num">№</th>
-                <th class="hist__th">Наименование</th>
-                <th class="hist__th hist__th--num">Кол-во</th>
-                <th class="hist__th hist__th--sm">Ед.</th>
-                <th class="hist__th hist__th--price">Цена / ед.</th>
-                <th class="hist__th hist__th--price">НМЦ</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, idx) in entry.items" :key="item.id" class="hist__tr">
-                <td class="hist__td hist__td--num hist__td--muted">{{ idx + 1 }}</td>
-                <td class="hist__td hist__td--name">{{ item.customName }}</td>
-                <td class="hist__td hist__td--num">{{ item.requestedQty }}</td>
-                <td class="hist__td hist__td--sm">{{ item.requestedUnit }}</td>
-                <td class="hist__td hist__td--price">{{ formatPrice(item.unitPrice) }}</td>
-                <td class="hist__td hist__td--price hist__td--bold">{{ formatPrice(item.totalNmts) }}</td>
-              </tr>
-              <tr class="hist__tr hist__tr--total">
-                <td class="hist__td" colspan="5">Итого НМЦ</td>
-                <td class="hist__td hist__td--price hist__td--grand">{{ formatPrice(entry.total) }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="hist__entry-right">
+          <span class="hist__entry-total">{{ formatPrice(entry.total_nmck) }}</span>
+          <button
+            class="hist__redown-btn"
+            :disabled="downloadingId === entry.id"
+            @click.stop="redownload(entry)"
+            title="Скачать повторно"
+          >
+            <span v-if="downloadingId === entry.id" class="hist__btn-spinner" />
+            <svg v-else width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1v8M4 6l3 3 3-3M2 12h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            .docx
+          </button>
+          <button
+            class="hist__del-btn"
+            :disabled="deletingId === entry.id"
+            @click.stop="deleteEntry(entry)"
+            title="Удалить"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M11 3.5l-.7 8a.5.5 0 01-.5.5H4.2a.5.5 0 01-.5-.5L3 3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
 
       </div>
@@ -179,6 +237,39 @@ function pluralPos(n) {
   margin-top: 4px;
 }
 
+/* ── Загрузка ── */
+.hist__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+}
+
+.hist__spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--color-pale-blue);
+  border-top-color: var(--color-main-blue);
+  border-radius: 50%;
+  animation: hist-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes hist-spin { to { transform: rotate(360deg); } }
+
+.hist__loading-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  margin-bottom: 3px;
+}
+.hist__loading-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
+}
+
 /* ── Пусто ── */
 .hist__empty {
   display: flex;
@@ -235,32 +326,23 @@ function pluralPos(n) {
 
 /* ── Запись ── */
 .hist__entry {
-  border: 1px solid var(--color-gray-blue);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  transition: box-shadow var(--transition-fast);
-}
-.hist__entry:hover { box-shadow: var(--shadow-sm); }
-
-.hist__entry-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  width: 100%;
-  padding: var(--space-4) var(--space-4);
+  padding: var(--space-4);
   background: #fff;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+  transition: box-shadow var(--transition-fast);
 }
-.hist__entry-head:hover { background: var(--color-pale-blue); }
+.hist__entry:hover { box-shadow: var(--shadow-sm); }
 
 .hist__entry-left {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .hist__entry-icon {
@@ -279,7 +361,8 @@ function pluralPos(n) {
 .hist__entry-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .hist__entry-date {
@@ -288,15 +371,30 @@ function pluralPos(n) {
   color: var(--color-black);
 }
 
+.hist__entry-meta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .hist__entry-meta {
   font-size: var(--font-size-xs);
   color: var(--color-pale-black);
 }
 
+.hist__entry-source {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+}
+.hist__entry-source--cart   { color: var(--color-main-blue); background: var(--color-pale-blue); }
+.hist__entry-source--single { color: #0d6b52; background: #e6f5ee; }
+
 .hist__entry-right {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex-shrink: 0;
 }
 
@@ -304,64 +402,51 @@ function pluralPos(n) {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   color: var(--color-main-blue);
+  margin-right: var(--space-2);
 }
 
-.hist__entry-chevron {
-  color: var(--color-pale-black);
-  transition: transform 200ms ease;
-}
-.hist__entry-chevron--open { transform: rotate(180deg); }
-
-/* ── Раскрытое тело ── */
-.hist__entry-body {
-  border-top: 1px solid var(--color-gray-blue);
-  overflow-x: auto;
-  background: #fafbfd;
-}
-
-/* ── Таблица ── */
-.hist__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-sm);
-}
-
-.hist__th {
-  text-align: left;
-  padding: 8px 12px;
-  background: var(--color-pale-blue);
-  font-size: 10px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-pale-black);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--color-gray-blue);
-}
-.hist__th--num { text-align: center; width: 48px; }
-.hist__th--sm  { width: 52px; }
-.hist__th--price { text-align: right; }
-
-.hist__td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-gray-blue);
-  color: var(--color-black);
-  vertical-align: middle;
-  background: #fff;
-}
-.hist__tr:last-child .hist__td { border-bottom: none; }
-.hist__td--num   { text-align: center; }
-.hist__td--sm    { text-align: center; }
-.hist__td--price { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.hist__td--bold  { font-weight: var(--font-weight-bold); }
-.hist__td--muted { color: var(--color-pale-black); font-size: var(--font-size-xs); }
-.hist__td--name  { font-weight: var(--font-weight-semibold); }
-.hist__td--grand { font-weight: var(--font-weight-bold); color: var(--color-main-blue); }
-
-.hist__tr--total .hist__td {
-  background: var(--color-pale-blue);
+.hist__redown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-family);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
+  color: var(--color-main-blue);
+  background: var(--color-pale-blue);
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.hist__redown-btn:hover:not(:disabled) { background: #dce8f5; border-color: var(--color-main-blue); }
+.hist__redown-btn:disabled { opacity: 0.6; cursor: default; }
+
+.hist__del-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   color: var(--color-pale-black);
+  background: none;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+.hist__del-btn:hover:not(:disabled) { color: var(--color-red); border-color: var(--color-red); background: #fff0f0; }
+.hist__del-btn:disabled { opacity: 0.5; cursor: default; }
+
+.hist__btn-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--color-gray-blue);
+  border-top-color: var(--color-main-blue);
+  border-radius: 50%;
+  animation: hist-spin 0.7s linear infinite;
 }
 </style>

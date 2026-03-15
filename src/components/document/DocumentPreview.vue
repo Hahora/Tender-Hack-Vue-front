@@ -1,8 +1,4 @@
 <script setup>
-/**
- * Предпросмотр итогового документа обоснования НМЦ.
- * Отображает сформированный текст в стилизованном блоке.
- */
 import AppTag from "../ui/AppTag.vue";
 import { formatDate } from "../../composables/usePriceCalculation.js";
 

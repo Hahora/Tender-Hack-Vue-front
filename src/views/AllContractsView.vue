@@ -15,7 +15,6 @@ onMounted(async () => {
     return
   }
   if (q && (!store.hasSearched || store.steQuery !== q)) {
-    // Восстанавливаем фильтры из URL перед поиском
     store.filters = {
       region:   String(route.query.region   || ''),
       vatRate:  String(route.query.vat      || ''),
@@ -24,38 +23,33 @@ onMounted(async () => {
       outliers: 'all',
     }
     store.requestedUnit = route.query.unit ? String(route.query.unit) : 'шт'
-    // Сохраняем force_include ДО поиска — search() сбросит forceInclude и watch очистит URL
-    const savedForceInclude = route.query.force_include
-    await store.search(q)
-    if (savedForceInclude) {
-      const ids = savedForceInclude.split(',').filter(Boolean)
-      if (ids.length) await store.restoreForceInclude(ids)
+    const workspaceParam = route.query.workspace
+    if (workspaceParam) {
+      await store.restoreWorkspace(workspaceParam)
+    } else {
+      await store.search(q)
     }
   }
-  // Если q отсутствует в URL — добавляем со всеми фильтрами
+  // Если q отсутствует в URL — добавляем со всеми параметрами
   if (store.steQuery && !route.query.q) {
-    const f  = store.filters
-    const fi = store.forceInclude
+    const f = store.filters
     router.replace({ query: {
       ...route.query,
-      q:             store.steQuery,
-      region:        f.region   || undefined,
-      vat:           f.vatRate  || undefined,
-      date_from:     f.dateFrom || undefined,
-      date_to:       f.dateTo   || undefined,
-      unit:          store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
-      force_include: fi.length ? fi.join(',') : undefined,
+      q:         store.steQuery,
+      region:    f.region   || undefined,
+      vat:       f.vatRate  || undefined,
+      date_from: f.dateFrom || undefined,
+      date_to:   f.dateTo   || undefined,
+      unit:      store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+      workspace: store.workspaceId || undefined,
     }})
   }
 })
 
-// Синхронизируем force_include в URL (immediate — срабатывает и при навигации без reload)
-watch(() => [...store.forceInclude], (ids) => {
+// Синхронизируем workspace_id в URL
+watch(() => store.workspaceId, (id) => {
   router.replace({
-    query: {
-      ...route.query,
-      force_include: ids.length ? ids.join(',') : undefined,
-    },
+    query: { ...route.query, workspace: id || undefined },
   })
 }, { immediate: true })
 
@@ -308,12 +302,12 @@ function doConfirm() {
                       name: 'contracts',
                       params: { ste: c.steNumber },
                       query: {
-                        q:             store.steQuery          || undefined,
-                        region:        store.filters.region    || undefined,
-                        date_from:     store.filters.dateFrom  || undefined,
-                        date_to:       store.filters.dateTo    || undefined,
-                        vat:           store.filters.vatRate   || undefined,
-                        force_include: store.forceInclude.length ? store.forceInclude.join(',') : undefined,
+                        q:         store.steQuery          || undefined,
+                        region:    store.filters.region    || undefined,
+                        date_from: store.filters.dateFrom  || undefined,
+                        date_to:   store.filters.dateTo    || undefined,
+                        vat:       store.filters.vatRate   || undefined,
+                        workspace: store.workspaceId       || undefined,
                       },
                     })"
                   >

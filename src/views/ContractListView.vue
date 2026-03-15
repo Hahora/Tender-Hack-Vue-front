@@ -14,25 +14,21 @@ onMounted(async () => {
     store.filters.dateFrom = route.query.date_from || ''
     store.filters.dateTo   = route.query.date_to   || ''
     store.filters.vatRate  = route.query.vat        || ''
-    // Сохраняем force_include ДО поиска — search() сбросит forceInclude и watch очистит URL
-    const savedForceInclude = route.query.force_include
-    await store.search(route.query.q)
-    if (savedForceInclude) {
-      const ids = savedForceInclude.split(',').filter(Boolean)
-      if (ids.length) await store.restoreForceInclude(ids)
+    const workspaceParam = route.query.workspace
+    if (workspaceParam) {
+      await store.restoreWorkspace(workspaceParam)
+    } else {
+      await store.search(route.query.q)
     }
   } else if (!store.hasSearched) {
     router.replace('/')
   }
 })
 
-// Синхронизируем force_include в URL (immediate — срабатывает и при навигации без reload)
-watch(() => [...store.forceInclude], (ids) => {
+// Синхронизируем workspace_id в URL
+watch(() => store.workspaceId, (id) => {
   router.replace({
-    query: {
-      ...route.query,
-      force_include: ids.length ? ids.join(',') : undefined,
-    },
+    query: { ...route.query, workspace: id || undefined },
   })
 }, { immediate: true })
 
@@ -185,8 +181,17 @@ function doConfirm() {
       <div class="cl__badge">{{ contracts.length }} контрактов</div>
     </div>
 
+    <!-- Загрузка -->
+    <div v-if="store.isLoading" class="cl__loading">
+      <div class="cl__spinner" />
+      <div>
+        <p class="cl__loading-title">Загружаем контракты…</p>
+        <p class="cl__loading-sub">Запрос «{{ store.steQuery || route.query.q }}»</p>
+      </div>
+    </div>
+
     <!-- Фильтр по статусу -->
-    <div class="cl__filters">
+    <div v-if="!store.isLoading" class="cl__filters">
       <button
         class="cl__filter-btn"
         :class="{ 'cl__filter-btn--active': activeFilters.size === 0 }"
@@ -213,11 +218,11 @@ function doConfirm() {
     </div>
 
     <!-- Список -->
-    <div v-if="filtered.length === 0" class="cl__empty">
+    <div v-if="!store.isLoading && filtered.length === 0" class="cl__empty">
       Контракты не найдены
     </div>
 
-    <div v-else class="cl__list">
+    <div v-else-if="!store.isLoading" class="cl__list">
       <div
         v-for="c in filtered"
         :key="c.contractNumber"
@@ -861,4 +866,36 @@ function doConfirm() {
 .cl-modal-enter-active { transition: opacity 180ms ease; }
 .cl-modal-leave-active { transition: opacity 150ms ease; }
 .cl-modal-enter-from, .cl-modal-leave-to { opacity: 0; }
+
+/* ── Загрузка ── */
+.cl__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6);
+  background: #fff;
+  border: 1px solid var(--color-gray-blue);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+.cl__spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--color-pale-blue);
+  border-top-color: var(--color-main-blue);
+  border-radius: 50%;
+  animation: cl-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes cl-spin { to { transform: rotate(360deg); } }
+.cl__loading-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  margin-bottom: 3px;
+}
+.cl__loading-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-pale-black);
+}
 </style>

@@ -24,7 +24,7 @@ async function doSearch() {
   if (!q) return
   emit('close')
   await store.search(q)
-  router.push({ name: 'results' })
+  router.push({ name: 'results', query: { q, workspace: store.workspaceId || undefined } })
 }
 
 function onKeydown(e) {

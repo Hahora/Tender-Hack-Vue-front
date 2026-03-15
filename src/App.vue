@@ -5,9 +5,11 @@ import AppHeader    from './components/AppHeader.vue'
 import AppSubHeader from './components/AppSubHeader.vue'
 import RegionBanner from './components/RegionBanner.vue'
 import { usePriceStore } from './stores/priceStore.js'
+import { useCartStore } from './stores/cartStore.js'
 
 const router = useRouter()
 const priceStore = usePriceStore()
+const cartStore  = useCartStore()
 
 const subHeaderRef   = ref(null)
 const isRouteLoading = ref(false)
@@ -39,6 +41,7 @@ function onKeydown(e) {
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
   priceStore.detectRegion()
+  cartStore.load()
 })
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 

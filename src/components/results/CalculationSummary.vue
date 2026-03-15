@@ -5,10 +5,13 @@ import AppButton from "../ui/AppButton.vue";
 import { formatPrice } from "../../composables/usePriceCalculation.js";
 import { useCartStore } from "../../stores/cartStore.js";
 import { usePriceStore } from "../../stores/priceStore.js";
+import { useAuthStore } from "../../stores/authStore.js";
+import { api } from "../../api/api.js";
 
 const router     = useRouter();
 const cart       = useCartStore();
 const priceStore = usePriceStore();
+const auth       = useAuthStore();
 
 const props = defineProps({
   unitPrice: { type: Number, default: 0 },
@@ -21,13 +24,17 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
-  "go-document",
   "update:requestedQty",
   "set-nmc",
 ]);
 
 const showJustification = ref(false);
-const addedToCart = ref(false);
+const addedToCart   = ref(false);
+const updatedInCart = ref(false);
+
+const isInCart = computed(() =>
+  cart.items.some(i => i.name === priceStore.steQuery)
+);
 
 // Редактирование НМЦ вручную
 const editingNmc  = ref(false);
@@ -58,22 +65,117 @@ function acQuery(filter) {
     date_from: f.dateFrom                 || undefined,
     date_to:   f.dateTo                   || undefined,
     unit:      priceStore.requestedUnit !== 'шт' ? priceStore.requestedUnit : undefined,
+    workspace: priceStore.workspaceId     || undefined,
     filter:    filter                     || undefined,
   }
 }
 
-function addToCart() {
-  cart.addItem({
-    steQuery:          priceStore.steQuery,
-    unitPrice:         props.unitPrice,
-    totalNmts:         props.totalNmts,
-    requestedQty:      props.requestedQty,
-    requestedUnit:     props.unit,
-    justificationText: props.justificationText,
-    sourcesCount:      props.statistics.count,
-  });
-  addedToCart.value = true;
-  setTimeout(() => { addedToCart.value = false; }, 2000);
+async function addToCart() {
+  addedToCart.value = true
+  try {
+    const name      = priceStore.steQuery
+    const quantity  = props.requestedQty || 1
+    const unit      = props.unit || 'шт'
+    const nmck_data = await priceStore.recalculateForCart(name, quantity, unit)
+    await cart.addItem({ name, quantity, unit, unit_price: props.unitPrice, nmck_data })
+  } finally {
+    setTimeout(() => { addedToCart.value = false }, 2000)
+  }
+}
+
+async function updateInCart() {
+  updatedInCart.value = true
+  try {
+    const name      = priceStore.steQuery
+    const quantity  = props.requestedQty || 1
+    const unit      = props.unit || 'шт'
+    const nmck_data = await priceStore.recalculateForCart(name, quantity, unit)
+    await cart.addItem({ name, quantity, unit, unit_price: props.unitPrice, nmck_data })
+  } finally {
+    setTimeout(() => { updatedInCart.value = false }, 2000)
+  }
+}
+
+async function removeFromCart() {
+  const existing = cart.items.find(i => i.name === priceStore.steQuery)
+  if (existing) await cart.removeItem(existing.id)
+}
+
+const isGeneratingDoc = ref(false)
+const docError        = ref('')
+
+async function generateSingleDoc() {
+  if (isGeneratingDoc.value) return
+  isGeneratingDoc.value = true
+  docError.value = ''
+  try {
+    const name      = priceStore.steQuery
+    const quantity  = props.requestedQty || 1
+    const unit      = props.unit || 'шт'
+    // Используем уже посчитанный nmckData из стора (без лишнего сетевого запроса)
+    const nmck_data = priceStore.nmckData
+
+    let token = auth.accessToken
+    let result
+    try {
+      result = await api.reportSingle({ name, quantity, unit, unit_price: props.unitPrice, nmck_data }, token)
+    } catch (err) {
+      if (err.status === 401) {
+        token = await auth.refresh()
+        result = await api.reportSingle({ name, quantity, unit, unit_price: props.unitPrice, nmck_data }, token)
+      } else throw err
+    }
+
+    // Скачиваем файл
+    const url = URL.createObjectURL(result.blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = result.filename; a.click()
+    URL.revokeObjectURL(url)
+
+    // Берём ID из истории и переходим на страницу документа
+    const history = await api.reportHistory(token)
+    const latest = history?.[0]
+    if (latest?.id) {
+      router.push({ name: 'document', params: { id: latest.id } })
+    } else {
+      router.push({ name: 'history' })
+    }
+  } catch (err) {
+    docError.value = err.message || 'Ошибка при формировании документа'
+  } finally {
+    isGeneratingDoc.value = false
+  }
+}
+
+function parseJustification(text) {
+  if (!text?.trim()) return null
+  const lines = text.split('\n')
+  const preamble = []
+  const sections = []
+  let currentSection = null
+  let inSections = false
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd()
+    const secMatch = line.match(/^(\d+)\.\s+(.+)$/)
+    if (secMatch) {
+      inSections = true
+      currentSection = { num: secMatch[1], title: secMatch[2].trim(), rows: [], paragraphs: [] }
+      sections.push(currentSection)
+    } else if (inSections && currentSection) {
+      const t = line.trim()
+      if (!t) continue
+      const kvMatch = t.match(/^(.+?):\s{2,}(.+)$/)
+      if (kvMatch) {
+        currentSection.rows.push({ label: kvMatch[1].trim(), value: kvMatch[2].trim() })
+      } else {
+        currentSection.paragraphs.push(t)
+      }
+    } else {
+      preamble.push(line.trim())
+    }
+  }
+  return { preamble: preamble.filter(Boolean), sections }
 }
 
 // Позиция медианы на шкале мин–макс
@@ -190,13 +292,18 @@ const medianPosition = computed(() => {
           @keydown.enter.prevent="commitNmc"
           @keydown.escape="editingNmc = false"
         />
+        <!-- Если данных достаточно — только отображение, без редактирования -->
+        <div
+          v-else-if="hasEnoughData"
+          class="cs__nmc cs__nmc--ready"
+        >
+          {{ formatPrice(totalNmts) }}
+        </div>
+
+        <!-- Если данных мало — можно редактировать вручную -->
         <div
           v-else
-          class="cs__nmc cs__nmc--editable"
-          :class="{
-            'cs__nmc--ready': hasEnoughData,
-            'cs__nmc--dim': !hasEnoughData,
-          }"
+          class="cs__nmc cs__nmc--editable cs__nmc--dim"
           title="Нажмите чтобы изменить вручную"
           @click="startEditNmc"
         >
@@ -229,7 +336,35 @@ const medianPosition = computed(() => {
 
     <!-- Действия -->
     <div class="cs__actions">
+      <!-- Уже в корзине: Обновить + Удалить -->
+      <template v-if="isInCart">
+        <div class="cs__cart-row">
+          <AppButton
+            variant="danger"
+            size="md"
+            :disabled="!hasEnoughData"
+            @click="updateInCart"
+          >
+            <svg v-if="!updatedInCart" width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M2 7a5 5 0 0 1 8.5-3.5L12 2M12 2v3H9M12 7a5 5 0 0 1-8.5 3.5L2 12M2 12V9h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <svg v-else width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ updatedInCart ? 'Обновлено!' : 'Обновить закупку' }}
+          </AppButton>
+          <AppButton variant="outline" size="md" @click="removeFromCart">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M11 3.5l-.7 8a.5.5 0 01-.5.5H4.2a.5.5 0 01-.5-.5L3 3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Удалить
+          </AppButton>
+        </div>
+      </template>
+
+      <!-- Не в корзине: Добавить -->
       <AppButton
+        v-else
         variant="danger"
         size="md"
         block
@@ -237,15 +372,9 @@ const medianPosition = computed(() => {
         @click="addToCart"
       >
         <svg v-if="!addedToCart" width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M1 1h2l1.5 7h7l1.5-6H4"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-          <circle cx="6" cy="12" r="1" fill="currentColor" />
-          <circle cx="11" cy="12" r="1" fill="currentColor" />
+          <path d="M1 1h2l1.5 7h7l1.5-6H4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="6" cy="12" r="1" fill="currentColor"/>
+          <circle cx="11" cy="12" r="1" fill="currentColor"/>
         </svg>
         <svg v-else width="13" height="13" viewBox="0 0 14 14" fill="none">
           <path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -256,25 +385,20 @@ const medianPosition = computed(() => {
         variant="outline"
         size="md"
         block
-        :disabled="!hasEnoughData"
-        @click="$emit('go-document')"
+        :disabled="!hasEnoughData || isGeneratingDoc"
+        @click="generateSingleDoc"
       >
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L8 1z"
-            stroke="currentColor"
-            stroke-width="1.3"
-          />
-          <path
-            d="M8 1v5h5M5 8h4M5 10.5h3"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-          />
+        <span v-if="isGeneratingDoc" class="cs__doc-spinner" />
+        <svg v-else width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L8 1z" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M8 1v5h5M5 8h4M5 10.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
         </svg>
-        Документ
+        {{ isGeneratingDoc ? 'Формируем…' : 'Сформировать документ' }}
       </AppButton>
     </div>
+
+    <!-- Ошибка генерации документа -->
+    <div v-if="docError" class="cs__doc-error">{{ docError }}</div>
 
     <!-- Обоснование — в самом низу, раскрывается по клику -->
     <div v-if="justificationText" class="cs__justification">
@@ -321,7 +445,30 @@ const medianPosition = computed(() => {
       </button>
       <Transition name="just-expand">
         <div v-if="showJustification" class="cs__just-text">
-          {{ justificationText }}
+          <template v-if="parseJustification(justificationText)">
+            <div class="just__preamble">
+              <p v-for="(line, li) in parseJustification(justificationText).preamble" :key="li"
+                :class="li === 0 ? 'just__title' : 'just__meta'">{{ line }}</p>
+            </div>
+            <div
+              v-for="sec in parseJustification(justificationText).sections"
+              :key="sec.num"
+              class="just__section"
+            >
+              <div class="just__section-head">
+                <span class="just__section-num">{{ sec.num }}</span>
+                <span class="just__section-title">{{ sec.title }}</span>
+              </div>
+              <table v-if="sec.rows.length" class="just__table">
+                <tr v-for="(row, ri) in sec.rows" :key="ri" class="just__row">
+                  <td class="just__label">{{ row.label }}</td>
+                  <td class="just__value">{{ row.value }}</td>
+                </tr>
+              </table>
+              <p v-for="(p, pi) in sec.paragraphs" :key="pi" class="just__paragraph">{{ p }}</p>
+            </div>
+          </template>
+          <span v-else class="cs__just-empty">Обоснование не сформировано</span>
         </div>
       </Transition>
     </div>
@@ -698,6 +845,32 @@ const medianPosition = computed(() => {
   gap: var(--space-2);
 }
 
+.cs__cart-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.cs__doc-error {
+  margin: 0 var(--space-4) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: #fdecea;
+  border: 1px solid #f5b7b1;
+  border-radius: var(--radius-base);
+  font-size: var(--font-size-xs);
+  color: #a03030;
+}
+
+.cs__doc-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-gray-blue);
+  border-top-color: var(--color-main-blue);
+  border-radius: 50%;
+  animation: cs-spin 0.7s linear infinite;
+}
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+
 .cs__nmc--editable {
   cursor: pointer;
   display: flex;
@@ -758,8 +931,8 @@ const medianPosition = computed(() => {
   font-size: var(--font-size-sm);
   color: var(--color-black);
   line-height: 1.6;
-  white-space: pre-wrap;
-  max-height: 280px;
+  background: #fff;
+  max-height: 220px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -775,11 +948,104 @@ const medianPosition = computed(() => {
   border-radius: 2px;
 }
 
+/* ===== Структурированное обоснование ===== */
+.just__preamble {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-gray-blue);
+  margin-bottom: var(--space-2);
+}
+
+.just__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-black);
+  margin-bottom: 2px;
+}
+
+.just__meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+}
+
+.just__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-gray-blue);
+}
+
+.just__section:last-child { border-bottom: none; }
+
+.just__section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 4px;
+}
+
+.just__section-num {
+  width: 18px;
+  height: 18px;
+  background: var(--color-main-blue);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.just__section-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-black);
+}
+
+.just__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.just__row:not(:last-child) .just__label,
+.just__row:not(:last-child) .just__value {
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.just__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+  padding: 3px 8px 3px 0;
+  width: 55%;
+  vertical-align: top;
+}
+
+.just__value {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-black);
+  padding: 3px 0;
+  vertical-align: top;
+}
+
+.just__paragraph {
+  font-size: var(--font-size-xs);
+  color: var(--color-black);
+  line-height: 1.5;
+}
+
+.cs__just-empty {
+  font-size: var(--font-size-xs);
+  color: var(--color-pale-black);
+}
+
 .just-expand-enter-active,
 .just-expand-leave-active {
   transition: max-height 250ms ease, opacity 200ms ease;
   overflow: hidden;
-  max-height: 350px;
+  max-height: 230px;
 }
 
 .just-expand-enter-from,

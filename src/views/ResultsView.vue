@@ -11,6 +11,9 @@ const router = useRouter();
 const route  = useRoute();
 const store  = usePriceStore();
 
+// Захватываем до watch-ей, которые могут менять URL
+const initialWorkspace = route.query.workspace;
+
 // ─── Черновик фильтров — редактируется пользователем, применяется только при "Пересчитать" ───
 const draftFilters = ref({
   region:   store.userRegion || '',
@@ -41,12 +44,11 @@ onMounted(async () => {
     store.requestedUnit     = restoredUnit
 
     if (!store.hasSearched || store.steQuery !== q) {
-      // Сохраняем force_include ДО поиска — search() очистит его
-      const savedForceInclude = route.query.force_include
-      await store.search(q);
-      if (savedForceInclude) {
-        const ids = savedForceInclude.split(',').filter(Boolean)
-        if (ids.length) await store.restoreForceInclude(ids)
+      if (initialWorkspace) {
+        // Восстанавливаем из workspace (reload страницы)
+        await store.restoreWorkspace(initialWorkspace)
+      } else {
+        await store.search(q);
       }
     }
     takeSnapshot();
@@ -56,6 +58,7 @@ onMounted(async () => {
   } else {
     draftFilters.value = { ...store.filters }
     draftUnit.value    = store.requestedUnit
+    takeSnapshot()
   }
 });
 
@@ -64,24 +67,22 @@ function syncUrl() {
   const f = store.filters
   router.replace({
     query: {
-      q:        store.steQuery || undefined,
-      region:   f.region   || undefined,
-      vatRate:  f.vatRate  || undefined,
-      dateFrom: f.dateFrom || undefined,
-      dateTo:   f.dateTo   || undefined,
-      unit:     store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+      q:         store.steQuery || route.query.q || undefined,
+      region:    f.region   || undefined,
+      vatRate:   f.vatRate  || undefined,
+      dateFrom:  f.dateFrom || undefined,
+      dateTo:    f.dateTo   || undefined,
+      unit:      store.requestedUnit !== 'шт' ? store.requestedUnit : undefined,
+      workspace: store.workspaceId || route.query.workspace || undefined,
     },
   })
 }
 
 watch(() => store.filters, syncUrl, { deep: true })
 watch(() => store.requestedUnit, syncUrl)
-watch(() => [...store.forceInclude], (ids) => {
+watch(() => store.workspaceId, (id) => {
   router.replace({
-    query: {
-      ...route.query,
-      force_include: ids.length ? ids.join(',') : undefined,
-    },
+    query: { ...route.query, workspace: id || undefined },
   })
 }, { immediate: true })
 
@@ -89,7 +90,6 @@ const {
   processedProcurements,
   weightedAvgUnitPrice,
   statistics,
-  justificationText,
 } = usePriceCalculation(
   computed(() => store.procurements),
   computed(() => store.filters),
@@ -103,15 +103,16 @@ const snapStatistics    = ref({ count: 0, outlierCount: 0, excludedCount: 0, min
 const snapJustification = ref('')
 
 function takeSnapshot() {
-  if (store.nmckData) {
-    const d = store.nmckData
+  const d = store.nmckData
+  if (d?.nmck != null) {
     snapUnitPrice.value  = d.nmck
     snapStatistics.value = {
-      count:         d.n_contracts,
-      outlierCount:  d.n_outliers,
+      // GET /workspace не возвращает n_contracts/n_outliers — берём из фронтовой статистики
+      count:         d.n_contracts  ?? statistics.value.count,
+      outlierCount:  d.n_outliers   ?? statistics.value.outlierCount,
       excludedCount: 0,
-      minPrice:      d.price_min,
-      maxPrice:      d.price_max,
+      minPrice:      d.price_min    ?? statistics.value.minPrice,
+      maxPrice:      d.price_max    ?? statistics.value.maxPrice,
       medianPrice:   d.nmck,
     }
   } else {
@@ -119,7 +120,7 @@ function takeSnapshot() {
     snapStatistics.value = { ...statistics.value }
   }
   snapUnit.value          = store.requestedUnit || 'шт'
-  snapJustification.value = justificationText.value
+  snapJustification.value = store.nmckData?.justification || ''
 }
 
 // totalNmts обновляется вместе с qty, но цена берётся из снэпшота
@@ -169,7 +170,7 @@ async function recalculate() {
 function onSetNmc(total) {
   const qty = store.requestedQty || 1
   snapUnitPrice.value = total / qty
-  snapJustification.value = justificationText.value
+  snapJustification.value = store.nmckData?.justification || ''
 }
 
 /* ─── Пагинация ─── */

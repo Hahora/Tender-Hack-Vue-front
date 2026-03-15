@@ -24,6 +24,7 @@ function goToSteDetail() {
       date_from: store.filters.dateFrom  || undefined,
       date_to:   store.filters.dateTo    || undefined,
       vat:       store.filters.vatRate   || undefined,
+      workspace: store.workspaceId       || undefined,
     },
   });
 }
@@ -33,12 +34,12 @@ function goToContracts() {
     name: "contracts",
     params: { ste: props.procurement.steNumber },
     query: {
-      q:             store.steQuery          || undefined,
-      region:        store.filters.region    || undefined,
-      date_from:     store.filters.dateFrom  || undefined,
-      date_to:       store.filters.dateTo    || undefined,
-      vat:           store.filters.vatRate   || undefined,
-      force_include: store.forceInclude.length ? store.forceInclude.join(',') : undefined,
+      q:         store.steQuery          || undefined,
+      region:    store.filters.region    || undefined,
+      date_from: store.filters.dateFrom  || undefined,
+      date_to:   store.filters.dateTo    || undefined,
+      vat:       store.filters.vatRate   || undefined,
+      workspace: store.workspaceId       || undefined,
     },
   });
 }
