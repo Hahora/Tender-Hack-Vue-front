@@ -261,7 +261,8 @@ export const usePriceStore = defineStore('price', () => {
       workspaceId.value = data.workspace_id || id
       hasSearched.value = true
 
-      if (data.search?.query) steQuery.value = data.search.query
+      // POST /workspace/search возвращает search.query, GET /workspace/:id возвращает query
+      steQuery.value = data.search?.query || data.query || steQuery.value
 
       const contracts = data.contracts || []
       procurements.value = contracts.map((c, i) => contractToItem(c, i))

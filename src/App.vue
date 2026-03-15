@@ -49,8 +49,8 @@ router.beforeEach(() => {
   isRouteLoading.value = true
   closeSearch()  // скрываем поиск при переходе на другую страницу
 })
-router.afterEach(()  => {
-  setTimeout(() => { isRouteLoading.value = false }, 350)
+router.afterEach(() => {
+  isRouteLoading.value = false
 })
 </script>
 

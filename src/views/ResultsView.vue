@@ -106,7 +106,6 @@ function takeSnapshot() {
   if (d?.nmck != null) {
     snapUnitPrice.value  = d.nmck
     snapStatistics.value = {
-      // GET /workspace не возвращает n_contracts/n_outliers — берём из фронтовой статистики
       count:         d.n_contracts  ?? statistics.value.count,
       outlierCount:  d.n_outliers   ?? statistics.value.outlierCount,
       excludedCount: 0,
