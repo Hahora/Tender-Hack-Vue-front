@@ -42,6 +42,7 @@ export const useCartStore = defineStore('cart', () => {
    * Если позиция с таким именем уже есть — обновляем через cart/{id}/nmck
    */
   async function addItem({ name, quantity, unit, unit_price, nmck_data }) {
+    const safeNmck = nmck_data ?? {}
     const existing = items.value.find(i => i.name === name)
     if (existing) {
       // Сначала обновляем quantity/unit через PATCH, затем NMCK через /nmck
@@ -49,14 +50,14 @@ export const useCartStore = defineStore('cart', () => {
         api.cartPatch(existing.id, { quantity, unit }, token)
       )
       const updated = await withAuth(token =>
-        api.cartUpdateNmck(existing.id, { unit_price, nmck_data }, token)
+        api.cartUpdateNmck(existing.id, { unit_price, nmck_data: safeNmck }, token)
       )
       const idx = items.value.findIndex(i => i.id === existing.id)
       if (idx >= 0) items.value[idx] = { ...updated, quantity, unit }
       return updated
     }
     const item = await withAuth(token =>
-      api.cartAdd({ name, quantity, unit, unit_price, nmck_data }, token)
+      api.cartAdd({ name, quantity, unit, unit_price, nmck_data: safeNmck }, token)
     )
     items.value.unshift(item)
     return item

@@ -87,7 +87,6 @@ watch(() => store.workspaceId, (id) => {
 }, { immediate: true })
 
 const {
-  processedProcurements,
   weightedAvgUnitPrice,
   statistics,
 } = usePriceCalculation(
@@ -183,12 +182,12 @@ watch(() => store.steQuery, () => { currentPage.value = 1 })
 watch(pageSize, () => { currentPage.value = 1 })
 
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(processedProcurements.value.length / pageSize.value))
+  Math.max(1, Math.ceil(store.steList.length / pageSize.value))
 )
 
 const displayList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return processedProcurements.value.slice(start, start + pageSize.value)
+  return store.steList.slice(start, start + pageSize.value)
 })
 
 function goToPage(p) {
@@ -306,8 +305,8 @@ function goToPage(p) {
               </div>
 
               <span class="pg__info">
-                {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, processedProcurements.length) }}
-                из {{ processedProcurements.length }}
+                {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, store.steList.length) }}
+                из {{ store.steList.length }}
               </span>
 
               <!-- Кнопки страниц -->

@@ -8,20 +8,24 @@ const router = useRouter();
 const route  = useRoute();
 const store  = usePriceStore();
 
+// Захватываем до watch-ей, которые могут менять URL
+const initialWorkspace = route.query.workspace;
+const initialQ = route.query.q;
+
 onMounted(async () => {
-  if (!store.hasSearched && route.query.q) {
-    store.filters.region   = route.query.region    || ''
-    store.filters.dateFrom = route.query.date_from || ''
-    store.filters.dateTo   = route.query.date_to   || ''
-    store.filters.vatRate  = route.query.vat        || ''
-    const workspaceParam = route.query.workspace
-    if (workspaceParam) {
-      await store.restoreWorkspace(workspaceParam)
-    } else {
-      await store.search(route.query.q)
-    }
-  } else if (!store.hasSearched) {
+  if (!initialQ && !store.hasSearched) {
     router.replace('/')
+    return
+  }
+  store.filters.region   = route.query.region    || ''
+  store.filters.dateFrom = route.query.date_from || ''
+  store.filters.dateTo   = route.query.date_to   || ''
+  store.filters.vatRate  = route.query.vat        || ''
+  // Всегда загружаем с сервера, не полагаемся на кэш стора
+  if (initialWorkspace) {
+    await store.restoreWorkspace(initialWorkspace)
+  } else if (initialQ) {
+    await store.search(initialQ)
   }
 })
 

@@ -8,27 +8,29 @@ const router = useRouter();
 const route = useRoute();
 const store = usePriceStore();
 
+// Захватываем до watch-ей, которые могут менять URL
+const initialWorkspace = route.query.workspace;
+const initialQ = route.query.q;
+
 onMounted(async () => {
-  const q = route.query.q
+  const q = initialQ
   if (!q && !store.hasSearched) {
     router.replace('/')
     return
   }
-  if (q && (!store.hasSearched || store.steQuery !== q)) {
-    store.filters = {
-      region:   String(route.query.region   || ''),
-      vatRate:  String(route.query.vat      || ''),
-      dateFrom: String(route.query.date_from || ''),
-      dateTo:   String(route.query.date_to   || ''),
-      outliers: 'all',
-    }
-    store.requestedUnit = route.query.unit ? String(route.query.unit) : 'шт'
-    const workspaceParam = route.query.workspace
-    if (workspaceParam) {
-      await store.restoreWorkspace(workspaceParam)
-    } else {
-      await store.search(q)
-    }
+  store.filters = {
+    region:   String(route.query.region   || ''),
+    vatRate:  String(route.query.vat      || ''),
+    dateFrom: String(route.query.date_from || ''),
+    dateTo:   String(route.query.date_to   || ''),
+    outliers: 'all',
+  }
+  store.requestedUnit = route.query.unit ? String(route.query.unit) : 'шт'
+  // Всегда загружаем с сервера, не полагаемся на кэш стора
+  if (initialWorkspace) {
+    await store.restoreWorkspace(initialWorkspace)
+  } else if (q) {
+    await store.search(q)
   }
   // Если q отсутствует в URL — добавляем со всеми параметрами
   if (store.steQuery && !route.query.q) {
@@ -63,7 +65,7 @@ function toggleFilter(key) {
   activeFilters.value = s;
 }
 
-// Группируем закупки по контракту
+// Группируем закупки по контракту (один договор = одна карточка, внутри может быть несколько СТЕ)
 const contracts = computed(() => {
   const map = new Map();
   for (const p of store.procurements) {
@@ -227,7 +229,7 @@ function doConfirm() {
     <div v-else class="ac__list">
       <div
         v-for="c in filtered"
-        :key="c.contractNumber"
+        :key="`${c.contractNumber}__${c.steNumber}`"
         class="ac__card"
         :class="{
           'ac__card--outlier':        contractStatus(c) === 'outlier',

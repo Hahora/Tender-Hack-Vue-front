@@ -7,12 +7,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     server: {
-      host: 'localhost',
+      host: true,
       port: 5173,
-      hmr: {
-        host: 'localhost',
-        port: 5173,
-      },
+      allowedHosts: ['buoyantly-positive-prawn.cloudpub.ru'],
       // Проксируем /api и /auth на бэкенд, чтобы обойти CORS в dev-режиме
       proxy: {
         '/api': {

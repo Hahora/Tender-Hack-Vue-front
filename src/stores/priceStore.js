@@ -29,6 +29,9 @@ export const usePriceStore = defineStore('price', () => {
   /* ─── Данные закупок ─── */
   const procurements = ref([])
 
+  /* ─── Список СТЕ (приходит с бэка в data.ste[]) ─── */
+  const steList = ref([])
+
   /* ─── Данные НМЦК с бэка (null если данных нет) ─── */
   const nmckData = ref(null)
 
@@ -67,6 +70,19 @@ export const usePriceStore = defineStore('price', () => {
       }
       throw err
     }
+  }
+
+  /* ─── Заполнить список СТЕ из ответа API ─── */
+  function applySteList(steArr) {
+    steList.value = (steArr || []).map(s => ({
+      id:        s.ste_id,
+      steNumber: s.ste_id,
+      name:      s.name,
+      unitPrice: s.last_price || 0,
+      unit:      requestedUnit.value || 'шт',
+      category:  s.category || '',
+      score:     s.score,
+    }))
   }
 
   /* ─── Преобразовать контракт из ответа API в объект procurement ─── */
@@ -197,6 +213,7 @@ export const usePriceStore = defineStore('price', () => {
 
       const contracts = data.contracts || []
       procurements.value = contracts.map((c, i) => contractToItem(c, i))
+      applySteList(data.ste)
 
       if (data.nmck) {
         applyNmck(data.nmck)
@@ -223,6 +240,7 @@ export const usePriceStore = defineStore('price', () => {
         error.value = 'Не удалось загрузить данные. Попробуйте ещё раз.'
       }
       procurements.value = []
+      steList.value      = []
       nmckData.value     = null
       workspaceId.value  = null
     } finally {
@@ -247,6 +265,7 @@ export const usePriceStore = defineStore('price', () => {
 
       const contracts = data.contracts || []
       procurements.value = contracts.map((c, i) => contractToItem(c, i))
+      applySteList(data.ste)
 
       if (data.nmck) {
         applyNmck(data.nmck)
@@ -262,6 +281,7 @@ export const usePriceStore = defineStore('price', () => {
       }
       workspaceId.value  = null
       procurements.value = []
+      steList.value      = []
       nmckData.value     = null
     } finally {
       isLoading.value = false
@@ -384,7 +404,7 @@ export const usePriceStore = defineStore('price', () => {
     steQuery, isLoading, hasSearched, error,
     workspaceId,
     userRegion, detectedRegion, regionDetecting, regionDetected, regionConfirmed, detectRegion,
-    procurements, nmckData,
+    procurements, steList, nmckData,
     forceInclude, forceExclude,
     filters,
     requestedQty, requestedUnit,

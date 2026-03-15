@@ -125,14 +125,17 @@ export function usePriceCalculation(procurements, filters, requestedQty) {
     const prices = validProcurements.value.map((p) => p.unitPrice);
     const bounds = getIqrBounds(prices);
     const sorted = [...prices].sort((a, b) => a - b);
-    const outlierCount = processedProcurements.value.filter(
-      (p) => p.isOutlier
-    ).length;
+
+    // Считаем уникальные контракты по идентификатору, а не строки СТЕ
+    const uniqueValid = new Set(validProcurements.value.map(p => p.contractNumber || p.id)).size;
+    const uniqueOutlier = new Set(
+      processedProcurements.value.filter(p => p.isOutlier).map(p => p.contractNumber || p.id)
+    ).size;
     const excludedCount = procurements.value.filter((p) => p.isExcluded).length;
 
     return {
-      count: validProcurements.value.length,
-      outlierCount,
+      count: uniqueValid,
+      outlierCount: uniqueOutlier,
       excludedCount,
       minPrice: sorted[0] ?? 0,
       maxPrice: sorted[sorted.length - 1] ?? 0,

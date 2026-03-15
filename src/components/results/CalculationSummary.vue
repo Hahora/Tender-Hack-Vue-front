@@ -112,8 +112,8 @@ async function generateSingleDoc() {
     const name      = priceStore.steQuery
     const quantity  = props.requestedQty || 1
     const unit      = props.unit || 'шт'
-    // Используем уже посчитанный nmckData из стора (без лишнего сетевого запроса)
-    const nmck_data = priceStore.nmckData
+    // Используем уже посчитанный nmckData из стора, если нет — пустой объект (ручной ввод цены)
+    const nmck_data = priceStore.nmckData ?? {}
 
     let token = auth.accessToken
     let result
